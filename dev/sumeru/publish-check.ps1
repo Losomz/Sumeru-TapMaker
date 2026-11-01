@@ -1,4 +1,4 @@
-﻿# 发布物料检查：核对 .project/project.json 的 assets 能否被 Maker「管理发布」正确上传到 TapTap，-Remote 时再读 TapTap 草稿比对。只读，不改任何文件。
+﻿# 发布物料检查：核对 docs/publish-materials/、.project/project.json（assets 和 dc_publish_sync.baseFields）是否一致、合规，-Remote 时再读 TapTap 草稿比对。只读，不改任何文件。
 # 规则说明见 dev/sumeru/publish/README.md。
 param([switch]$Remote)
 $ErrorActionPreference = "Stop"
@@ -87,26 +87,30 @@ function Test-AssetUrl([string]$name, [string]$url, [string]$local) {
 }
 
 # 调用 taptap-cli 并解析 JSON 输出：参数 JSON 写进项目内临时文件用 @file 传入（命令行传 JSON 会被 PowerShell 吃掉引号），stderr 不当作致命错误。
+# taptap-cli 输出 UTF-8；中文 Windows 默认按 GBK 解码，中文会把 JSON 的引号吞掉导致解析失败，所以调用期间临时切到 UTF-8。
 function Invoke-TapCli([string[]]$arguments, [string]$data) {
     $dataFile = Join-Path $tmp "data.json"
     [System.IO.File]::WriteAllText($dataFile, $data, (New-Object System.Text.UTF8Encoding($false)))
     $saved = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
+    $savedEncoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
     Push-Location $ProjectRoot
     try { $raw = (& taptap-cli @arguments --data "@.tmp/publish-check/data.json" 2>&1 | ForEach-Object { "$_" }) -join "`n" }
-    finally { Pop-Location; $ErrorActionPreference = $saved }
+    finally { Pop-Location; [Console]::OutputEncoding = $savedEncoding; $ErrorActionPreference = $saved }
     $start = $raw.IndexOf("{")
     if ($start -lt 0) { return [pscustomobject]@{ ok = $false; error = [pscustomobject]@{ message = $raw } } }
     try { return $raw.Substring($start) | ConvertFrom-Json } catch { return [pscustomobject]@{ ok = $false; error = [pscustomobject]@{ message = $raw } } }
 }
 
-Write-Host "== 本地物料（出包时实际上传的文件）=="
+Write-Host "== 本地物料（docs/publish-materials/ 与 assets）=="
 $specs = @{
     icon = @{ MinW = 512; MinH = 512; Ratio = 1; RatioText = "1:1" }
     promotional_image = @{ MinW = 1920; MinH = 1080; Ratio = 16 / 9; RatioText = "16:9"; MaxMB = 4 }
     square_promotional_image = @{ MinW = 1440; MinH = 1440; Ratio = 1; RatioText = "1:1"; MaxMB = 4 }
-    cover_horizontal = $null
-    cover_vertical = $null
+    # 封面是 TapTap「Windows 素材」模块的 cover / cover_vertical，比例不是 16:9 / 9:16。
+    cover_horizontal = @{ MinW = 460; MinH = 215; Ratio = 460 / 215; RatioText = "460:215" }
+    cover_vertical = @{ MinW = 600; MinH = 900; Ratio = 2 / 3; RatioText = "2:3" }
 }
 foreach ($name in @("icon", "promotional_image", "square_promotional_image", "cover_horizontal", "cover_vertical")) {
     $local = Test-AssetPath $name $assets.$name ($name -eq "icon") $specs[$name]
@@ -118,6 +122,28 @@ for ($i = 0; $i -lt $shots.Count; $i++) { [void](Test-AssetPath "screenshots[$($
 $shotUrls = @($assets.screenshot_urls | Where-Object { $_ })
 if ($shotUrls.Count -ne $shots.Count) { Report WARN "screenshot_urls" "有 $($shotUrls.Count) 个地址，和 $($shots.Count) 张截图数量不一致，网页显示的截图和实际上传的不同" }
 
+# Maker 发布记录：有 dc_publish_sync 时，管理发布页显示 TapTap 草稿里的图，上线时按草稿改写 assets 和 baseFields。
+# baseFields 和 assets 不一致，说明新图还没写进草稿，上线会被改回去。
+$sync = $project.dc_publish_sync
+if ($sync -and $sync.baseFields) {
+    Write-Host ""
+    Write-Host "== Maker 发布记录（dc_publish_sync.baseFields）=="
+    $basePairs = @(
+        @("icon_url", "icon_url"),
+        @("banner_url", "promotional_image_url"),
+        @("square_promo_url", "square_promotional_image_url"),
+        @("cover_horizontal_url", "cover_horizontal_url"),
+        @("cover_vertical_url", "cover_vertical_url")
+    )
+    foreach ($pair in $basePairs) {
+        $base = "$($sync.baseFields.($pair[0]))"
+        $want = "$($assets.($pair[1]))"
+        if ($base -eq $want) { Report OK "baseFields.$($pair[0])" "与 assets.$($pair[1]) 一致" }
+        elseif ($sync.pending -and "$($sync.pending.($pair[0]))" -eq $want) { Report INFO "baseFields.$($pair[0])" "管理发布页改过、还没上线（记在 dc_publish_sync.pending），TapTap 草稿已是这张；上线后看 Maker 同步提交" }
+        else { Report WARN "baseFields.$($pair[0])" "和 assets.$($pair[1]) 不同：新图要先写进 TapTap 草稿，再把这里改成同一个地址，否则上线时会被改回去（见 dev/sumeru/publish/README.md 换图步骤）" }
+    }
+}
+
 if ($Remote) {
     Write-Host ""
     Write-Host "== TapTap 草稿（taptap-cli 只读）=="
@@ -128,8 +154,10 @@ if ($Remote) {
     } else {
         $fields = @{}
         $hasDraft = $true
-        foreach ($module in @("basic-info", "assets-upload")) {
+        foreach ($module in @("basic-info", "assets-upload", "windows-exclusive")) {
             $result = Invoke-TapCli @("app", "get-app-module", "--dev-id", $publish.developer_id, "--app-id", $publish.app_id) "{`"module_id`":`"$module`"}"
+            # windows-exclusive（Windows 素材，含两张封面）不是每个应用都有，读不到只提示。
+            if (-not $result.ok -and $module -eq "windows-exclusive") { Report INFO $module ("读取失败，跳过封面比对：" + $result.error.message); continue }
             if (-not $result.ok) { Report ERROR $module ("读取失败：" + $result.error.message); $hasDraft = $false; continue }
             if (-not $result.data.result.revision) { $hasDraft = $false }
             foreach ($p in $result.data.result.fields.PSObject.Properties) { $fields[$p.Name] = $p.Value.current_value }
@@ -147,6 +175,10 @@ if ($Remote) {
             @("banner_4", $fields["banner_4"], $assets.promotional_image_url),
             @("square_promo_image", $fields["square_promo_image"], $assets.square_promotional_image_url)
         )
+        if ($fields.ContainsKey("cover_vertical")) {
+            $pairs += ,@("cover", $fields["cover"], $assets.cover_horizontal_url)
+            $pairs += ,@("cover_vertical", $fields["cover_vertical"], $assets.cover_vertical_url)
+        }
         foreach ($pair in $pairs) {
             if ("$($pair[1])" -eq "$($pair[2])") { Report OK $pair[0] "与 project.json 一致" }
             else { Report WARN $pair[0] "TapTap：$($pair[1])`n        期望：$($pair[2])" }
