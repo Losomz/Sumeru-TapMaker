@@ -34,6 +34,7 @@ UIKit:Attach(app,metrics)
 | `panelRoot` | `ui/panels` | 未显式写 `template`/`controller` 的面板和 Shell 按此推导路径 |
 | `componentRoot` | 不设 | 不设时未登记组件直接报错 |
 | `shellComponents` | `{}` | 按 Shell 名列出预加载组件 |
+| `toast` | 不设（默认样式） | 内置提示的底图、文字和样式覆盖；`false` 关闭内置提示，见 [通用提示 Toast](#通用提示-toast) |
 
 - 框架内置控件只有 `FrameworkButton`、`FrameworkToggle`、`FrameworkScrollView`。
 - `Configure` 必须在 `RegisterPanel` 之前调用；配置在 `Destroy` 后保留。
@@ -41,9 +42,52 @@ UIKit:Attach(app,metrics)
 
 项目需要为所有 JSON 控件注入统一外观时，可调用 `require("sumeru.toolkit.uikit.Json").SetWidgetInitializer(fn)`。回调接收 Widget，在每次加载模板时遍历执行，包含动态条目的控件；不设置时保持默认行为。业务布局仍保存在 JSON 中。
 
+## 通用提示 Toast
+
+框架内置一条通用提示。它在 `Attach` 时自动注册为面板 `sumeru-toast`，挂在 overlay 宿主的 Toast 层，所以项目里必须有 overlay 宿主。业务调用 `UIKit:ShowNotice(text,duration)` 即可，不用自己写提示面板。
+
+**由框架负责，配置改不了**：
+- 量文字、折行，底板随行数长高并居中；
+- 新提示立即替换旧的，文字相同也重播动画；
+- 不传时长时按字数定时长；
+- 提示不拦截点击。
+
+**默认样式**（`style` 中的键）：
+
+| 项 | 默认 |
+|---|---|
+| 字号 `fontSize` / 行高 `lineHeight` | 16 / 1 倍 |
+| 内边距 `padX` / `padY` | 左右 16，上下 10 |
+| 宽度 `minWidth` / `maxWidth` / `margin` | 短字收窄，最窄 160；最宽取 min(屏宽 − 2×24, 400)，超出就折行 |
+| 高度 `minHeight` / `warnLines` | 随行数长高，最矮 48。不限行数，不裁字；超过 3 行时日志提醒文案太长 |
+| 位置 `anchorY` | 水平居中，底板中心在屏高 42% 处，多出的行上下对称长 |
+| 动画 `fadeIn` / `fadeOut` / `rise` | 淡入 0.15 秒并上移 12，淡出 0.3 秒再上移 24 |
+| 时长 `minDuration` / `maxDuration` | 不传时长时取 1.2 + 0.12×字数，限制在 2～5 秒 |
+
+默认外观是深色半透明底、2 像素描边，文字用主题默认字体、浅米色。
+
+**在初始化时覆盖**：写在 `Configure` 的 `toast` 字段里。`background`、`text` 整组替换默认外观，`style` 只覆盖写到的项：
+
+```lua
+UIKit:Configure({ ...,
+ toast={
+  background={image="image/ui/toast.png",slice={20,20,20,20}}, -- 常用：九宫格底图，切片按上、右、下、左写图片像素
+  text={font="sans",color={244,227,189,255}},                  -- 常用：字体和字色
+  style={fontSize=18,anchorY=.3},                              -- 少用：只改写到的项
+ },
+})
+```
+
+- 不传底图时，`background` 可写 `color`、`borderColor`、`borderWidth`、`borderRadius`，用纯色底。
+- `toast=false` 关闭内置提示。
+
+**老项目迁移**：项目如果自己在 Toast 层注册过提示面板，同步框架后会同时弹出两条提示。删掉自己的面板及其 `.meta`，把外观写进 `toast`；暂时不迁移就传 `toast=false`。
+
+布局 `toast/toast.ui.json` 是框架内部文件，放在 `scripts/` 下。游戏能加载它，但它不会出现在 Maker 后台的 UI 文档列表里。项目不要改这个文件。
+
 ## 文字自适应底板
 
-提示条、Toast 这类“底板 + 一段文字”的控件，用固定宽高时文字一长就被裁掉。`TextFit` 按实际文字算底板尺寸，字号不变：
+内置 Toast 已经用 `TextFit` 处理了自适应。项目自己的气泡、提示条这类「底板 + 一段文字」的控件，用固定宽高时文字一长就会被裁掉。`TextFit` 按实际文字算出底板尺寸，字号不变：
 
 ```lua
 local TextFit=require("sumeru.toolkit.uikit.TextFit")

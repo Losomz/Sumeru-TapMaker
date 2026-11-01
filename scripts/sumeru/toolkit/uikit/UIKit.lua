@@ -6,12 +6,14 @@ local UI=require("urhox-libs/UI")
 local Registry=require("sumeru.toolkit.uikit.PanelRegistry")
 local Components=require("sumeru.toolkit.uikit.ComponentRegistry")
 local PanelInstance=require("sumeru.toolkit.uikit.PanelInstance")
+local Toast=require("sumeru.toolkit.uikit.toast.Toast")
 ---@class SumeruUIKitConfig
 ---@field host fun(app:table):string
 ---@field allows fun(def:SumeruPanelDefinition,app:table):boolean
 ---@field panelRoot string
 ---@field componentRoot string?
 ---@field shellComponents table<string,string[]>
+---@field toast SumeruToastConfig|false|nil 内置提示的皮肤与样式覆盖；false 关闭内置提示
 
 ---@class SumeruUIKit
 ---@field active_ SumeruPanelInstance[]
@@ -35,20 +37,27 @@ local function reset()
  Kit.root_=nil;Kit.frame_=nil;Kit.host_=nil;Kit.phaseResolver_=nil;Kit.metrics_=nil
 end
 -- 注入业务配置：host(app) 返回宿主 Shell 名，allows(def,app) 判断面板是否允许出现，
--- panelRoot 为面板约定根路径，componentRoot 为未登记组件的查找根路径，shellComponents 为各 Shell 预加载组件。
--- 需在 RegisterPanel 之前调用，未传字段保持原值。
+-- panelRoot 为面板约定根路径，componentRoot 为未登记组件的查找根路径，shellComponents 为各 Shell 预加载组件，
+-- toast 为内置提示的底图、文字与样式覆盖（false 关闭）。需在 RegisterPanel 之前调用，未传字段保持原值。
 function Kit:Configure(opts)
  copy(opts,self.config_)
  self.registry_:SetRoot(self.config_.panelRoot)
  Components:SetRoot(self.config_.componentRoot)
  self:MarkStructureDirty()
 end
--- 挂接 App 和自适应测量函数。
-function Kit:Attach(app,metrics) self.app_=app;self.metrics_=metrics;self:MarkStructureDirty() end
--- 显示一次性通用提示，并让 Toast 层自行管理生命周期。
+-- 挂接 App 和自适应测量函数；内置提示未关闭时注册在 overlay 宿主的 Toast 层。
+function Kit:Attach(app,metrics)
+ self.app_=app;self.metrics_=metrics
+ if self.config_.toast~=false and not self.panels_[Toast.KEY] then
+  self:RegisterPanel(Toast.KEY,{shell="overlay",owner="global",layer=self.Layers.Toast,template=Toast.TEMPLATE,controller=Toast.CONTROLLER,
+   visible=function(_,kit) return kit:HasNotice() end})
+ end
+ self:MarkStructureDirty()
+end
+-- 显示一次性通用提示，并让 Toast 层自行管理生命周期；不传时长时按字数给。
 function Kit:ShowNotice(text,duration)
  local message=tostring(text or "")
- local seconds=math.max(.1,tonumber(duration) or 2.4)
+ local seconds=math.max(.1,tonumber(duration) or Toast.Duration(message,Toast.Resolve(self.config_.toast).style))
  self.noticeText_=message
  self.noticeDuration_=seconds
  self.noticeTime_=message~="" and seconds or 0

@@ -6,6 +6,7 @@ local Theme=UI.Theme
 local TextFit={}
 -- 测量余量（像素）：防止取整误差让刚好放下的文字意外折行或被裁掉。
 local SLACK=2
+TextFit.SLACK=SLACK
 -- 测量文字底板：返回底板宽高、文字区宽高与是否换行；cache 复用上次测量结果，同一段文字每帧调用只命中缓存。
 ---@param text string
 ---@param opt SumeruTextFitOptions
