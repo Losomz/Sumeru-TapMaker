@@ -43,6 +43,29 @@ Components:RegisterTemplate("Card","ui/components/card/card.ui.json","ui.compone
 
 先核对当前入口、注册配置、运行时模板引用和项目已有改动，再迁移；已有布局不重新生成。
 
+### 最省事的做法：原样平移到 assets 下的同一相对路径
+
+旧项目的 JSON 和 Controller 通常一起放在 `scripts/<前缀>/ui/panels/<key>/`。这时只要把 `.ui.json` 和它的 `.meta` 从 `scripts/` 平移到 `assets/` 下**同样的相对路径**，例如：
+
+```text
+scripts/game/ui/panels/home/home.ui.json  →  assets/game/ui/panels/home/home.ui.json
+```
+
+- `scripts/` 和 `assets/` 都是资源根，平移后资源路径不变，仍是 `game/ui/panels/home/home.ui.json`。
+  - `panelRoot`、`componentRoot`、显式 `template`、`RegisterTemplate` 和 Shell 路径都不用改，代码一行不动。
+  - Controller 留在原位置，模块名也不变。
+- 不用改 `registry_.Paths` 这类内部接口，也就不需要下面的过渡适配。
+- 线上加载不受影响：Maker 构建按扩展名把 `.lua`、`.json`、`.xml` 列为启动前必须下好的资源，不走按需下载，所以加载页的布局放进 `assets/` 后照样第一时间可用，不用放进 LoadKit 的包里。
+- 按需下载的素材清单只要还是按目录遍历（例如只扫 `assets/image/`、`assets/audio/`），新目录就不会进清单。
+- 用 `git mv` 移动，保持 UUID 和内容；移完确认 `scripts/` 下不再剩 `.ui.json`。
+- 只迁项目自己的布局。框架的 `toast/toast.ui.json` 留在 `scripts/sumeru/`，见 [README](README.md#通用提示-toast)。
+
+old-street-forge 在 2026-11-01 就是这样迁的：30 份布局，代码零改动，迁完 `ui list` 从 0 份变成 30 份。
+
+### 改用 assets/ui/ 结构
+
+想换成上面推荐的 `assets/ui/` 结构时，按下面的步骤做：
+
 1. 把正式 `.ui.json` 移到 `assets/ui/`，保持页面、组件和条目模板的目录层级。
 2. 同时移动对应 `.meta`，保持 UUID 和文件内容；已有有效 UUID 不重新生成。确实新增或缺少元数据时，使用 Maker MCP `generate_resource_meta`，不手写 UUID。
 3. 保留节点 ID、组件名、模板参数、显隐和布局值；Lua Controller 可以保留原位置。
