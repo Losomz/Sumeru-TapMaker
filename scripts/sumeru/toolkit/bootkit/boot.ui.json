@@ -1,0 +1,12 @@
+{"type":"Panel","id":"boot-root","width":"100%","height":"100%","backgroundColor":[22,22,28,255],"pointerEvents":"auto","flexDirection":"column","alignItems":"center","children":[
+ {"type":"Panel","id":"boot-top","width":"100%","flexGrow":44,"flexDirection":"column","justifyContent":"flex-end","alignItems":"center","pointerEvents":"none"},
+ {"type":"Panel","id":"boot-bar","width":240,"height":6,"backgroundColor":[255,255,255,36],"borderRadius":3,"pointerEvents":"none","children":[
+  {"type":"Panel","id":"boot-bar-fill","width":"0%","height":"100%","backgroundColor":[240,196,110,255],"borderRadius":3,"pointerEvents":"none"}
+ ]},
+ {"type":"Label","id":"boot-percent","width":240,"height":20,"marginTop":8,"text":"0%","fontSize":14,"fontColor":[180,180,190,255],"textAlign":"center","pointerEvents":"none"},
+ {"type":"Label","id":"boot-phrase","width":"100%","height":60,"marginTop":12,"paddingLeft":32,"paddingRight":32,"whiteSpace":"normal","verticalAlign":"top","text":"正在启动…","fontSize":18,"fontColor":[236,236,240,255],"textAlign":"center","pointerEvents":"none"},
+ {"type":"Panel","id":"boot-bottom","width":"100%","flexGrow":56,"flexDirection":"column","justifyContent":"flex-end","alignItems":"center","paddingLeft":32,"paddingRight":32,"paddingBottom":84,"pointerEvents":"box-none","children":[
+  {"type":"Label","id":"boot-tip","width":"100%","height":56,"text":"","fontSize":16,"fontColor":[160,160,172,255],"textAlign":"center","whiteSpace":"normal","pointerEvents":"none"},
+  {"type":"Button","id":"boot-button","width":"100%","height":56,"text":"重新下载","fontSize":20}
+ ]}
+]}

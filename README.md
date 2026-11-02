@@ -20,7 +20,7 @@ dev/sumeru/publish/                        发布经验与模板：Maker 与 Tap
    - `.gitattributes` 换行规则、`.gitignore` 的 `.tmp/`；
    - `docs/publish-materials/`（发布物料）与 `docs/更新日志/`（论坛公告）模板。
 4. 按同步结果的提示，用 Maker MCP `generate_resource_meta` 给 `scripts/sumeru/` 下缺 `.meta` 的文件生成 `.meta`。
-5. 写好 `scripts/main.lua` 后，双击 `启动游戏.cmd`。
+5. 照 `scripts/sumeru/toolkit/bootkit/README.md` 的模板写 `scripts/main.lua`（启动页、首屏包、读档等交给 BootKit）；要换启动页样式就把模板布局复制到 `assets/game/ui/boot/`。写好后双击 `启动游戏.cmd`。
 6. 上架前读 `dev/sumeru/publish/README.md`：图片放进 `docs/publish-materials/`，出包前后各跑一次 `publish-check.ps1`。
 
 ## UI 布局与 Maker 编辑器
