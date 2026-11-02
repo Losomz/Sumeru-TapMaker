@@ -1,5 +1,15 @@
 # Maker UI 目录与迁移说明
 
+## 规范
+
+1. 项目的 `.ui.json` 一律放在 `assets/` 下，`scripts/` 只放 Lua。新项目用下面的 `assets/ui/` 结构；老项目按「最省事的做法」平移。
+2. 唯一例外：框架自己的布局（`scripts/sumeru/` 下，如 `toast/toast.ui.json`）随框架同步，项目不改，后台看不到它是正常的。
+3. 新建布局要有 `.meta`，用 Maker MCP `generate_resource_meta` 生成，不手写 UUID。
+4. 新建或移动布局后，用 `taptap-maker ui list --target-dir <项目> --json` 确认后台能看到。
+5. `dev/sumeru/ui-check.ps1` 会检查前两条和第 3 条：`scripts/` 下有项目布局、`assets/` 下的布局缺 `.meta` 时提示，退出码 1。启动游戏（`play.ps1`）、截图（`shot.sh`）、同步框架（`sync.ps1`）时会自动跑；只提示，不拦。
+
+old-street-forge 曾经把 30 份布局都放在 `scripts/game/ui/` 下，游戏一直正常，所以没人发现；直到在控制台里找 UI 时才发现一份都没有。这个检查就是为了让它不再悄悄发生。
+
 ## 后台扫描范围
 
 Maker 控制台的 UI 编辑器递归扫描项目 **整个 `assets/` 目录**，将后缀为 `.ui.json` 的文件列为 UI 文档；`assets/ui/` 是本框架推荐的统一存放位置，不是后台唯一允许的子目录。

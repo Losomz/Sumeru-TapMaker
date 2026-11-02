@@ -25,7 +25,12 @@ dev/sumeru/publish/                        发布经验与模板：Maker 与 Tap
 
 ## UI 布局与 Maker 编辑器
 
-UI JSON 统一放在 `assets/ui/`，Lua Controller 放在 `scripts/`。Maker 编辑器递归扫描整个 `assets/`，不会发现 `scripts/` 中的 `.ui.json`；游戏能加载 JSON，并不代表后台能找到它。
+**规范：项目的 `.ui.json` 一律放在 `assets/` 下，`scripts/` 只放 Lua。** Maker 编辑器只递归扫描 `assets/`，不会发现 `scripts/` 中的 `.ui.json`；游戏能加载 JSON，并不代表后台能找到它。
+
+- 新项目放 `assets/ui/`。老项目把布局连同 `.meta` 平移到 `assets/` 下与 Controller 相同的相对路径，代码不用改。
+- 唯一例外是框架自己的布局（`scripts/sumeru/` 下，如 Toast），随框架同步，项目不改。
+- 新建布局后用 Maker MCP `generate_resource_meta` 生成 `.meta`，再用 `taptap-maker ui list --target-dir <项目> --json` 确认后台能看到。
+- 自动检查 `dev/sumeru/ui-check.ps1`：启动游戏、截图、同步框架时都会跑，`scripts/` 下有项目布局或 `assets/` 下的布局缺 `.meta` 就提示。
 
 目录示例、旧项目迁移、资源 UUID 保留和自定义控件的编辑器限制见 [Maker UI 目录与迁移说明](scripts/sumeru/toolkit/uikit/MAKER_UI.md)。
 

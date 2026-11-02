@@ -9,6 +9,9 @@ SIZE="$(node -e 'let c={};try{c=require(process.argv[1])}catch(e){};console.log(
 SCENE="${1:-home}";FRAME="${2:-120}";W="${3:-${SIZE% *}}";H="${4:-${SIZE#* }}"
 EXE="$(node -e 'console.log(require(process.env.USERPROFILE+"/.taptap-maker/runtime/installation.json").executable)')"
 OUT="$ROOT/.tmp/shots";mkdir -p "$OUT"
+# UI 布局位置：Maker 控制台只扫 assets/，scripts/ 下（框架 scripts/sumeru/ 除外）的 .ui.json 后台看不到；完整检查见 ui-check.ps1。
+BAD="$(cd "$ROOT" && find scripts -name "*.ui.json" -not -path "scripts/sumeru/*" 2>/dev/null)"
+if [ -n "$BAD" ]; then echo "警告：以下 UI 布局放在 scripts/ 下，Maker 控制台看不到，连同 .meta 平移到 assets/ 下同一相对路径（见 scripts/sumeru/toolkit/uikit/MAKER_UI.md）：";echo "$BAD"|sed "s/^/  /";fi
 rm -f "$OUT/$SCENE.png" "$OUT/$SCENE.json"
 timeout 150 "$EXE" "dev/shot-$SCENE.lua" "-tapcode_dir=$ROOT" -tool_mode -nosound \
  "-screenshot=$OUT/$SCENE.png" "-screenshot-frame=$FRAME" -skip_login -p=Res -w "-width=$W" "-height=$H" \

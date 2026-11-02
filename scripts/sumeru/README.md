@@ -23,4 +23,5 @@
 - 框架仓库默认放在与游戏项目同级的 `Sumeru.TapMaker`，不存在时自动克隆。新项目接入见模板仓库根目录 README。
 - 框架改动在模板仓库提交、推送后，再到各项目双击同步，不要只改项目副本。
 - `.meta` 含项目与作者信息，不入本仓库；同步后由各项目用 Maker MCP `generate_resource_meta` 为新文件生成。
+- 项目的 UI 布局 `.ui.json` 一律放在 `assets/` 下（Maker 控制台只扫 `assets/`），Controller 放 `scripts/`；`dev/sumeru/ui-check.ps1` 在启动、截图、同步时自动检查。见 [Maker UI 目录与迁移说明](toolkit/uikit/MAKER_UI.md#规范)。
 - 业务代码通过 `require("sumeru.toolkit.<kit>")` 引用；框架代码不引用任何业务模块，UIKit 的宿主与项目控件通过 `UIKit:Configure` 注入（见 [UIKit 接入配置](toolkit/uikit/README.md#接入配置)）。

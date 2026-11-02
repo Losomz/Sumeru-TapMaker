@@ -9,6 +9,9 @@ param(
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "common.ps1")
 
+# UI 布局放错位置只提示，不拦启动。
+& (Join-Path $PSScriptRoot "ui-check.ps1") -Quiet
+
 $config = Get-LaunchConfig
 if ($Width -gt 0) { $config.width = $Width }
 if ($Height -gt 0) { $config.height = $Height }

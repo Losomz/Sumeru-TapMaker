@@ -85,6 +85,31 @@ UIKit:Configure({ ...,
 
 布局 `toast/toast.ui.json` 是框架内部文件，放在 `scripts/` 下。游戏能加载它，但它不会出现在 Maker 后台的 UI 文档列表里。项目不要改这个文件。
 
+## 按钮动效 pop
+
+`components/Controls.lua` 里的框架按钮默认是 lift：悬停时往上抬一点，不放大。想要“悬停放大、按下缩小、松手回弹”，用可选的 pop。不开就不变，已有项目同步后照旧。
+
+**框架按钮**：传 `motion="pop"`，倍数可以单独改：
+
+```lua
+local Controls=require("sumeru.toolkit.uikit.components.Controls")
+local btn=Controls.Button{text="出发",motion="pop",hoverScale=1.06,onClick=go}
+```
+
+**不是 Button 的控件**（Panel 拼的按钮、卡片、拖拽块、和画面分开的点击区）：在建控件之前把 props 交给 `Controls.Pop`：
+
+```lua
+local visual=UI.Panel{flexGrow=1,pointerEvents="none",children=kids}   -- 放大的那一层
+local hit=UI.Panel(Controls.Pop({width=200,height=56,onClick=go,children={visual}},{target=visual}))
+```
+
+- `target`：放大哪个控件，可以是控件本身，也可以是 `function(w) return 控件 end`；不传就放大控件自己。点击区和画面分开时指向画面那一层，点击区就不跟着变大变小，按在边上也不会一缩就滑出去。
+- `hoverScale` / `pressedScale`：覆盖默认的 1.05 / 0.95；`disabled=true` 只关动效，点击照常。
+- 放大以 `target` 自己的 `transformOrigin` 为中心（默认居中）；它原本有 `scale` 时按原值再乘。
+- 只有鼠标移进来才算悬停，手机上只有按下缩小、松手回弹；只认主键；移开或取消回到原大小。
+- 原有的 `onPointerEnter/Leave/Down/Up/Cancel` 照常调用；原来没有 `onPointerDown/Up` 时照旧往父控件冒泡，滚动和拖拽不受影响。
+- 参数在 `Controls.Motion.pop`：悬停 1.05、按下 0.95；悬停 0.12 秒、按下 0.07 秒、松手 0.22 秒带一点回弹（`easeOutBack`）。
+
 ## 文字自适应底板
 
 内置 Toast 已经用 `TextFit` 处理了自适应。项目自己的气泡、提示条这类「底板 + 一段文字」的控件，用固定宽高时文字一长就会被裁掉。`TextFit` 按实际文字算出底板尺寸，字号不变：

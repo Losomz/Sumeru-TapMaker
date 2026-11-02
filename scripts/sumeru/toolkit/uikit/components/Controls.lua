@@ -46,6 +46,21 @@ Controls.Motion = {
         easing = "easeOut",
         disabledOpacity = 0.45,
     },
+    -- Opt-in "pop": hover grows, press shrinks, release springs back with a small overshoot.
+    -- Used by Controls.Button with motion = "pop" and by Controls.Pop for any widget.
+    pop = {
+        scale = { normal = 1, hover = 1.05, pressed = 0.95 },
+        durations = {
+            hover = 0.12,
+            press = 0.07,
+            release = 0.22,
+        },
+        easing = {
+            hover = "easeOut",
+            press = "easeOut",
+            release = "easeOutBack",
+        },
+    },
 }
 
 local function motionTransition(properties, duration, easing)
@@ -56,12 +71,34 @@ local function motionTransition(properties, duration, easing)
     return table.concat(parts, ", ")
 end
 
+--- Scale-only pop motion on one target widget.
+---@param target Widget
+---@param baseScale number
+---@param stateName "normal"|"hover"|"pressed"
+---@param durationName "hover"|"press"|"release"
+---@param hoverScale? number
+---@param pressedScale? number
+local function applyPop(target, baseScale, stateName, durationName, hoverScale, pressedScale)
+    local motion = Controls.Motion.pop
+    local scale = motion.scale[stateName] or 1
+    if stateName == "hover" and hoverScale then scale = hoverScale end
+    if stateName == "pressed" and pressedScale then scale = pressedScale end
+    local phase = motion.durations[durationName] and durationName or "release"
+    target:SetStyle({
+        transition = string.format("scale %.2fs %s", motion.durations[phase], motion.easing[phase]),
+        scale = baseScale * scale,
+    })
+end
+
 -- ============================================================================
 -- Button
 -- ============================================================================
 
 ---@class FrameworkButtonProps : ButtonProps
 ---@field effectTarget? Widget Visual container moved and scaled by the interaction effect.
+---@field motion? "lift"|"pop" "lift" (default) moves the target up on hover; "pop" scales it (Controls.Motion.pop).
+---@field hoverScale? number pop only: hover scale, overrides Controls.Motion.pop.scale.hover.
+---@field pressedScale? number pop only: pressed scale, overrides Controls.Motion.pop.scale.pressed.
 
 ---@class FrameworkButton : Button
 ---@overload fun(props?: FrameworkButtonProps): FrameworkButton
@@ -91,11 +128,16 @@ end
 function FrameworkButton:ApplyMotionState(stateName, durationName)
     local target = self.effectTarget_
     if not target then return end
+    self.motionState_ = stateName
+
+    if self.props.motion == "pop" then
+        applyPop(target, self.baseScale_, stateName, durationName, self.props.hoverScale, self.props.pressedScale)
+        return
+    end
 
     local motion = Controls.Motion.button
     local state = motion.states[stateName] or motion.states.normal
     local duration = motion.durations[durationName] or motion.durations.release
-    self.motionState_ = stateName
 
     target:SetStyle({
         transition = motionTransition({ "translateY", "scale" }, duration, motion.easing),
@@ -454,5 +496,106 @@ function FrameworkToggle:SetDisabled(disabled)
 end
 
 Controls.Toggle = FrameworkToggle
+
+-- ============================================================================
+-- Pop for any widget
+-- ============================================================================
+
+---@class PopOptions
+---@field target? Widget|fun(widget: Widget): Widget|nil Widget that scales (default: the widget itself). Point it at a visual layer to keep the hit area fixed.
+---@field hoverScale? number Overrides Controls.Motion.pop.scale.hover.
+---@field pressedScale? number Overrides Controls.Motion.pop.scale.pressed.
+---@field disabled? boolean No motion at all; clicks still go through.
+
+---@class PopState
+---@field hovered boolean
+---@field pressed boolean
+---@field target Widget
+---@field base number
+
+---@type table<Widget, PopState>
+local popStates_ = setmetatable({}, { __mode = "k" })
+
+--- Give any widget the pop motion (hover grows, press shrinks, release springs back)
+--- by wrapping the pointer callbacks of its props table before it is built.
+--- For Panels, cards, drag pieces and hit areas that are not Buttons; their own
+--- callbacks keep running. Rules match Controls.Button: hover counts only for a
+--- mouse (touch gets press and release), only the primary action presses, leaving
+--- or cancelling restores the normal size, releasing while still over it returns
+--- to the hover size. The target's own scale is read on first use and multiplied.
+---@param props table Widget props, changed in place.
+---@param opts? PopOptions
+---@return table props
+function Controls.Pop(props, opts)
+    opts = opts or {}
+    if opts.disabled then return props end
+
+    ---@param w Widget
+    ---@return PopState
+    local function stateOf(w)
+        local st = popStates_[w]
+        if not st then
+            local target = opts.target
+            if type(target) == "function" then target = target(w) end
+            ---@cast target Widget|nil
+            target = target or w
+            st = { hovered = false, pressed = false, target = target, base = tonumber(target.props.scale) or 1 }
+            -- SetStyle only eases a property that already has a value; seed it so the first hover eases too
+            if target.props.scale == nil then target.props.scale = st.base end
+            popStates_[w] = st
+        end
+        return st
+    end
+
+    ---@param w Widget
+    ---@param durationName "hover"|"press"|"release"
+    local function apply(w, durationName)
+        local st = stateOf(w)
+        local stateName = st.pressed and "pressed" or st.hovered and "hover" or "normal"
+        applyPop(st.target, st.base, stateName, durationName, opts.hoverScale, opts.pressedScale)
+    end
+
+    local onEnter, onLeave = props.onPointerEnter, props.onPointerLeave
+    local onDown, onUp, onCancel = props.onPointerDown, props.onPointerUp, props.onPointerCancel
+
+    props.onPointerEnter = function(event, w)
+        if event and event.pointerType == "mouse" then
+            stateOf(w).hovered = true
+            apply(w, "hover")
+        end
+        if onEnter then onEnter(event, w) end
+    end
+    props.onPointerLeave = function(event, w)
+        local st = stateOf(w)
+        st.hovered, st.pressed = false, false
+        apply(w, "release")
+        if onLeave then onLeave(event, w) end
+    end
+    -- Widget only bubbles down/up to the parent when there is no callback, so keep
+    -- bubbling ourselves when the widget had none (scroll views and drags above it).
+    props.onPointerDown = function(event, w)
+        if event and event:IsPrimaryAction() then
+            local st = stateOf(w)
+            if event.pointerType ~= "mouse" then st.hovered = false end
+            st.pressed = true
+            apply(w, "press")
+        end
+        if onDown then onDown(event, w) elseif w.parent then w.parent:OnPointerDown(event) end
+    end
+    props.onPointerUp = function(event, w)
+        if event and event:IsPrimaryAction() then
+            stateOf(w).pressed = false
+            apply(w, "release")
+        end
+        if onUp then onUp(event, w) elseif w.parent then w.parent:OnPointerUp(event) end
+    end
+    props.onPointerCancel = function(event, w)
+        local st = stateOf(w)
+        st.hovered, st.pressed = false, false
+        apply(w, "release")
+        if onCancel then onCancel(event, w) end
+    end
+    return props
+end
 
 return Controls

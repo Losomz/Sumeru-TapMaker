@@ -124,6 +124,9 @@ $script:added + $script:updated + $script:removed | ForEach-Object { Write-Host 
 # 补齐项目配置（launch.json、构建忽略、换行规则），只补缺不覆盖。
 & (Join-Path $Project "dev\sumeru\setup.ps1")
 
+# UI 布局要放在 assets/，Maker 控制台才看得到；放错只提示。
+& (Join-Path $Project "dev\sumeru\ui-check.ps1") -Project $Project
+
 # 列出缺少 .meta 的框架脚本（文档不需要），交由 Maker MCP generate_resource_meta 生成；dev/ 不是资源目录，不需要 .meta。
 $missing = @(Get-SyncFiles (Join-Path $Project "scripts\sumeru") | Where-Object {
     $_ -notmatch '\.md$' -and -not (Test-Path -LiteralPath ((Join-Path $Project "scripts\sumeru\$_") + ".meta"))
