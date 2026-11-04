@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    # 框架仓库本地路径，默认与游戏项目同级的 Sumeru.TapMaker。
+    # 框架仓库本地路径，默认找与游戏项目同级的 Sumeru.TapMaker 或 sumeru-tapmaker。
     [string]$Source = "",
     # 目标游戏项目根目录；在框架仓库里运行时必填（安装到新项目或迁移老项目）。
     [string]$Project = "",
@@ -20,15 +20,33 @@ if ((Split-Path -Leaf $PSScriptRoot) -ne "sumeru" -or (Split-Path -Leaf (Split-P
 }
 $here = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
-# 框架仓库没有 Maker 的 .project/：在仓库里运行时源就是本仓库，目标必须用 -Project 指定。
-if (-not (Test-Path -LiteralPath (Join-Path $here ".project"))) {
+# 游戏项目有 Maker 的 .project/（远端构建过才有）或 .maker-mcp/（绑定后就有），框架仓库两样都没有。
+# 只认 .project/ 的话，还没远端构建过的项目会被当成框架仓库。
+function Test-GameProject([string]$dir) {
+    (Test-Path -LiteralPath (Join-Path $dir ".project")) -or (Test-Path -LiteralPath (Join-Path $dir ".maker-mcp"))
+}
+
+# 在框架仓库里运行时源就是本仓库，目标必须用 -Project 指定。
+if (-not (Test-GameProject $here)) {
     if (-not $Project) { throw "这里是框架仓库，请用 -Project 指定游戏项目根目录" }
     if (-not $Source) { $Source = $here }
 }
 if (-not $Project) { $Project = $here }
 $Project = (Resolve-Path -LiteralPath $Project).Path
 if (-not (Test-Path -LiteralPath (Join-Path $Project "scripts"))) { throw "不是游戏项目（缺少 scripts/）：$Project" }
-if (-not $Source) { $Source = Join-Path (Split-Path -Parent $Project) "Sumeru.TapMaker" }
+# 默认用与游戏项目同级的框架仓库，两种目录名都认；都没有才克隆到 Sumeru.TapMaker。
+if (-not $Source) {
+    $parent = Split-Path -Parent $Project
+    $Source = Join-Path $parent "Sumeru.TapMaker"
+    foreach ($name in @("Sumeru.TapMaker", "sumeru-tapmaker")) {
+        $candidate = Join-Path $parent $name
+        if ((Test-Path -LiteralPath (Join-Path $candidate ".git")) -and
+            (Test-Path -LiteralPath (Join-Path $candidate "dev\sumeru\sync.ps1"))) {
+            $Source = $candidate
+            break
+        }
+    }
+}
 
 # 框架仓库不存在时克隆；存在时按参数或询问决定是否快进拉取，避免覆盖本地未推送的框架改动。
 if (-not (Test-Path -LiteralPath (Join-Path $Source ".git"))) {

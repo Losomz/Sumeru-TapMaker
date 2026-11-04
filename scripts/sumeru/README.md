@@ -20,7 +20,8 @@
 
 - 同步：双击项目根目录的 `同步框架.cmd`，询问是否先更新框架，然后把框架和本地工具（`dev/sumeru/`）同步到当前项目，跑完停住看结果。
 - Agent 免询问执行：`powershell -ExecutionPolicy Bypass -File .\dev\sumeru\sync.ps1 -Update`（或 `-NoUpdate`）。
-- 框架仓库默认放在与游戏项目同级的 `Sumeru.TapMaker`，不存在时自动克隆。新项目接入见模板仓库根目录 README。
+- 框架仓库默认放在与游戏项目同级的 `Sumeru.TapMaker` 或 `sumeru-tapmaker`，两个都没有时自动克隆到 `Sumeru.TapMaker`。
+- 项目根目录有 `.project/` 或 `.maker-mcp/` 才算游戏项目，还没远端构建过的项目也能双击同步；两样都没有的是框架仓库，要用 `-Project` 指定目标。新项目接入见模板仓库根目录 README。
 - 框架改动在模板仓库提交、推送后，再到各项目双击同步，不要只改项目副本。
 - `.meta` 含项目与作者信息，不入本仓库；同步后由各项目用 Maker MCP `generate_resource_meta` 为新文件生成。
 - 项目的 UI 布局 `.ui.json` 一律放在 `assets/` 下（Maker 控制台只扫 `assets/`），Controller 放 `scripts/`；`dev/sumeru/ui-check.ps1` 在启动、截图、同步时自动检查。见 [Maker UI 目录与迁移说明](toolkit/uikit/MAKER_UI.md#规范)。
