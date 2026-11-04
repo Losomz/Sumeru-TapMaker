@@ -7,6 +7,18 @@ local TextFit={}
 -- 测量余量（像素）：防止取整误差让刚好放下的文字意外折行或被裁掉。
 local SLACK=2
 TextFit.SLACK=SLACK
+-- 每个字的取整余量（基准像素）：测量不带界面缩放，Label 绘制时带缩放，NanoVG 按绘制字号逐字把字宽取整，
+-- 实际一行会比测出来的宽几个像素，字越多差得越多（夹着空格、数字的中文最明显）。
+local ROUND_PER_GLYPH=.5
+TextFit.ROUND_PER_GLYPH=ROUND_PER_GLYPH
+-- 这段文字绘制时可能比测量多出的宽度：按字数和缩放算，缩放小于 1 时一个绘制像素折合更多基准像素。
+---@param text string
+---@return number
+function TextFit.Tolerance(text)
+ local n=utf8.len(text or "") or #(text or "")
+ local scale=Theme.GetScale and Theme.GetScale() or 1
+ return math.ceil(n*ROUND_PER_GLYPH/math.min(1,math.max(.25,scale)))
+end
 -- 测量文字底板：返回底板宽高、文字区宽高与是否换行；cache 复用上次测量结果，同一段文字每帧调用只命中缓存。
 ---@param text string
 ---@param opt SumeruTextFitOptions
@@ -22,12 +34,15 @@ function TextFit.Measure(text,opt,cache)
  local line=UI.MeasureTextFit(text or "",{fontSize=fontSize,fontFace=fontFace,letterSpacing=spacing,lineHeight=lineHeight,
   width=1000000,height=1000000,cache=cache.line})
  cache.line=line
- local w=(line.width or 0)+SLACK
+ -- 单行加上取整余量，免得实际绘制多出几个像素把最后一个字挤到第二行；
+ -- 换行时按收窄了余量的宽度测高度：实际绘制宽一点只会少折行，底板高度只会富余不会不够。
+ local tol=TextFit.Tolerance(text)
+ local w=(line.width or 0)+SLACK+tol
  local h=(line.height or 0)+SLACK
  local wrapped=w>inner
  if wrapped then
   local wrap=UI.MeasureTextFit(text or "",{fontSize=fontSize,fontFace=fontFace,letterSpacing=spacing,lineHeight=lineHeight,
-   width=inner,height=1000000,multiline=true,cache=cache.wrap})
+   width=math.max(1,inner-tol),height=1000000,multiline=true,cache=cache.wrap})
   cache.wrap=wrap
   w=inner;h=(wrap.height or 0)+SLACK
  end
