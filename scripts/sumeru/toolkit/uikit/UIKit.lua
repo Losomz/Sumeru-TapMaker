@@ -33,7 +33,7 @@ local function reset()
  Kit.registry_=Registry.new(Kit.config_.panelRoot);Kit.panels_={};Kit.order_={};Kit.active_={};Kit.shells_={}
  Kit.pageKey_=false;Kit.overlayKey_=false;Kit.pageProps_={};Kit.openRevision_={}
  Kit.structureDirty_=true;Kit.dataDirty_=true;Kit.metricsKey_=nil;Kit.app_=nil
- Kit.noticeText_="";Kit.noticeTime_=0;Kit.noticeDuration_=0;Kit.noticeRevision_=0
+ Kit.noticeText_="";Kit.noticeTime_=0;Kit.noticeDuration_=0;Kit.noticeRevision_=0;Kit.noticeColor_=nil
  Kit.root_=nil;Kit.frame_=nil;Kit.host_=nil;Kit.phaseResolver_=nil;Kit.metrics_=nil
 end
 -- 注入业务配置：host(app) 返回宿主 Shell 名，allows(def,app) 判断面板是否允许出现，
@@ -55,10 +55,11 @@ function Kit:Attach(app,metrics)
  self:MarkStructureDirty()
 end
 -- 显示一次性通用提示，并让 Toast 层自行管理生命周期；不传时长时按字数给。
-function Kit:ShowNotice(text,duration)
+-- color 可选：这一条的字色（如好消息绿、坏消息红），不传用皮肤字色。
+function Kit:ShowNotice(text,duration,color)
  local message=tostring(text or "")
  local seconds=math.max(.1,tonumber(duration) or Toast.Duration(message,Toast.Resolve(self.config_.toast).style))
- self.noticeText_=message
+ self.noticeText_=message;self.noticeColor_=color
  self.noticeDuration_=seconds
  self.noticeTime_=message~="" and seconds or 0
  self.noticeRevision_=self.noticeRevision_+1
@@ -72,6 +73,8 @@ function Kit:GetNotice() return self.noticeText_ end
 function Kit:GetNoticeRevision() return self.noticeRevision_ end
 -- 读取当前提示持续时间，供 Toast 控制器同步动画长度。
 function Kit:GetNoticeDuration() return self.noticeDuration_ end
+-- 读取当前提示的字色；nil 表示用皮肤字色。
+function Kit:GetNoticeColor() return self.noticeColor_ end
 -- 注册 JSON 面板，禁止旧 native 战场路径。
 function Kit:RegisterPanel(key,definition)
  local def=copy(definition,{key=key,index=#self.order_+1})

@@ -46,6 +46,8 @@ UIKit:Attach(app,metrics)
 
 框架内置一条通用提示。它在 `Attach` 时自动注册为面板 `sumeru-toast`，挂在 overlay 宿主的 Toast 层，所以项目里必须有 overlay 宿主。业务调用 `UIKit:ShowNotice(text,duration)` 即可，不用自己写提示面板。
 
+- 第三个参数 `color` 可选，只改这一条的字色，例如好消息绿、坏消息红：`UIKit:ShowNotice("+¥30",nil,{90,120,60,255})`。不传就用皮肤字色。
+
 **由框架负责，配置改不了**：
 - 量文字、折行，底板随行数长高并居中；
 - 新提示立即替换旧的，文字相同也重播动画；

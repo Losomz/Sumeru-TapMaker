@@ -90,6 +90,8 @@ function Toast:Refresh()
  local ui=self.ctx.ui;local revision=ui:GetNoticeRevision()
  if self.revision==revision then return end
  self.revision=revision
+ -- 这一条指定了字色就用它，没指定回到皮肤字色。
+ self.text:SetStyle({fontColor=ui.GetNoticeColor and ui:GetNoticeColor() or self.skin.text.color or Toast.DEFAULT_TEXT.color})
  self:Layout(self.ctx)
  local s=self.skin.style;local duration=ui:GetNoticeDuration()
  local a=math.min(.45,s.fadeIn/duration);local b=math.max(a,1-s.fadeOut/duration)
