@@ -9,6 +9,20 @@
 --   boot-tip       轮换小提示，失败时隐藏
 --   boot-button    失败时显示，点了重试；布局里没有时点全屏任意处重试
 local UI=require("urhox-libs/UI")
+---@class SumeruBootScreen
+---@field kit SumeruBootKit
+---@field w table<string,table> 按约定 id 找到的控件
+---@field shown number 进度条当前显示的百分比
+---@field barKey number|nil
+---@field pi integer 当前短句序号
+---@field pt number
+---@field ti integer 当前小提示序号
+---@field tt number
+---@field instance table|nil
+---@field root table|nil
+---@field path string|nil
+---@field phraseColor number[]
+---@field tipColor number[]
 local Screen={};Screen.__index=Screen
 Screen.IDS={"boot-icon","boot-bar","boot-bar-fill","boot-percent","boot-phrase","boot-tip","boot-button"}
 local FADE=.25
@@ -48,6 +62,7 @@ end
 -- 创建启动页并挂到 UI 根上。
 ---@param kit SumeruBootKit
 ---@param layout string|nil
+---@return SumeruBootScreen
 function Screen.new(kit,layout)
  local self=setmetatable({kit=kit,w={},shown=0,barKey=nil,pi=1,pt=0,ti=1,tt=0},Screen)
  local instance,path=load(layout,kit.LAYOUT)

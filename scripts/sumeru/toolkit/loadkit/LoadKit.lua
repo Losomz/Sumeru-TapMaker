@@ -198,7 +198,7 @@ function Kit:Start(pack)
  pack.state="loading";pack.failed=0;pack.retries=0
  if #pack.refs==0 then return self:Finish(pack,true,0) end
  local left=0
- for _,b in ipairs(pack.batches) do if b.state~="ready" then left=left+1 end end
+ for _,b in ipairs(pack.batches or {}) do if b.state~="ready" then left=left+1 end end
  print("[LoadKit] Start "..pack.name.." ("..#pack.refs.." refs, "..left.."/"..#pack.batches.." batches)")
  self:advance_(pack)
 end
@@ -257,14 +257,14 @@ function Kit:advance_(pack)
   pack.again=false
   if pack.state~="loading" then break end
   local busy=0
-  for _,b in ipairs(pack.batches) do if b.state=="loading" or b.state=="wait" then busy=busy+1 end end
-  for _,b in ipairs(pack.batches) do
+  for _,b in ipairs(pack.batches or {}) do if b.state=="loading" or b.state=="wait" then busy=busy+1 end end
+  for _,b in ipairs(pack.batches or {}) do
    if pack.state~="loading" or busy>=self.opt.parallel then break end
    if b.state=="idle" then busy=busy+1;self:startBatch_(pack,b) end
   end
   if pack.state=="loading" and not pack.again then
    local open,failed=false,0
-   for _,b in ipairs(pack.batches) do
+   for _,b in ipairs(pack.batches or {}) do
     if b.state=="failed" then failed=failed+b.failed elseif b.state~="ready" then open=true end
    end
    if not open then

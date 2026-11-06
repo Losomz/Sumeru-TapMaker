@@ -31,6 +31,7 @@ Toast.DEFAULT_TEXT={color={244,236,220,255}}
 ---@return SumeruToastSkin
 function Toast.Resolve(cfg)
  if type(cfg)~="table" then cfg={} end
+ ---@type SumeruToastStyle
  local style={}
  for k,v in pairs(Toast.DEFAULT) do style[k]=v end
  for k,v in pairs(cfg.style or {}) do style[k]=v end

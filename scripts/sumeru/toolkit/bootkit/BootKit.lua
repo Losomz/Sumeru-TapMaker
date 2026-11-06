@@ -70,7 +70,7 @@ Kit.TEXT={phrases={"正在启动…"},phraseEvery=1.6,tips={},tipEvery=6,tipPref
 local function mergeText(cfg)
  local t={};for k,v in pairs(Kit.TEXT) do t[k]=v end
  for k,v in pairs(cfg or {}) do if k~="messages" then t[k]=v end end
- t.messages={};for k,v in pairs(Kit.TEXT.messages) do t.messages[k]=v end
+ t.messages={};for k,v in pairs(Kit.TEXT.messages or {}) do t.messages[k]=v end
  for k,v in pairs((cfg or {}).messages or {}) do t.messages[k]=v end
  return t
 end
