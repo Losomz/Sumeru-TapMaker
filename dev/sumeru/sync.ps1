@@ -7,7 +7,9 @@ param(
     # 直接更新框架到最新，不询问。
     [switch]$Update,
     # 直接用本地框架同步，不更新、不询问。
-    [switch]$NoUpdate
+    [switch]$NoUpdate,
+    # 同步后不自动提交（默认把框架内容提交成一个本地提交，不推送）。
+    [switch]$NoCommit
 )
 
 # Sumeru 模板同步器：把框架（scripts/sumeru/）、模板工具（dev/sumeru/）和根目录一键脚本同步进游戏项目，连同自身一起更新。
@@ -162,3 +164,25 @@ if ($missing.Count -gt 0) {
     Write-Host "以下文件缺少 .meta，请用 Maker MCP generate_resource_meta 生成："
     $missing | ForEach-Object { Write-Host ("  scripts/sumeru/" + ($_ -replace '\\', '/')) }
 }
+
+# 把框架托管的内容（scripts/sumeru、dev/sumeru、根目录一键脚本）提交成一个本地提交；只提交这些路径，
+# 项目自己的改动（包括已暂存的）原样留着；没有变化就不提交；不推送，推送照旧走 Maker 构建。
+function Commit-Synced {
+    # git 的提示（如换行符警告）走 stderr，本函数内不当成错误。
+    $ErrorActionPreference = "Continue"
+    if (-not (Test-Path -LiteralPath (Join-Path $Project ".git"))) { Write-Host "项目不是 git 仓库，跳过提交"; return }
+    $paths = @("scripts/sumeru", "dev/sumeru") + @(Get-ChildItem -LiteralPath $Source -File -Filter *.cmd | ForEach-Object { $_.Name })
+    git -C $Project add -A -- $paths
+    if ($LASTEXITCODE -ne 0) { Write-Host "暂存框架内容失败，没有提交" -ForegroundColor Yellow; return }
+    $changed = @(git -C $Project diff --cached --name-only -- $paths)
+    if ($changed.Count -eq 0) { Write-Host "框架内容和上次提交一致，不用提交"; return }
+    # 提交说明走标准输入并用 UTF-8，避免 Windows PowerShell 传参时中文、引号出错。
+    $saved = $OutputEncoding
+    $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    "🔄 chore(sumeru): 同步框架到 $commit" | git -C $Project commit -q -F - -- $paths
+    $ok = $LASTEXITCODE -eq 0
+    $OutputEncoding = $saved
+    if ($ok) { Write-Host ("已提交同步的框架内容（{0} 个文件，未推送）" -f $changed.Count) }
+    else { Write-Host "提交失败，同步的文件已在工作区，请手动提交" -ForegroundColor Yellow }
+}
+if (-not $NoCommit) { Commit-Synced }

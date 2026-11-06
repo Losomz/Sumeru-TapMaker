@@ -10,7 +10,7 @@
 | 截图 + 运行时报错检查 | — | — | `bash dev/sumeru/shot.sh <场景> [帧数] [宽] [高]` |
 | 检查 UI 布局位置（启动、截图、同步时自动跑） | — | `.\dev\sumeru\ui-check.ps1` | — |
 | 检查发布物料（出包前 / 出包后） | — | `.\dev\sumeru\publish-check.ps1` / `-Remote` | — |
-| 同步框架与工具 | `同步框架.cmd` | `.\dev\sumeru\sync.ps1 -Update` 或 `-NoUpdate` | — |
+| 同步框架与工具（同步完自动提交，加 `-NoCommit` 不提交） | `同步框架.cmd` | `.\dev\sumeru\sync.ps1 -Update` 或 `-NoUpdate` | — |
 
 ## 约定
 - `dev/launch.json`：`width`、`height`、`orientation`（`portrait`/`landscape`）、`savePrefix`（存档文件名前缀，默认项目文件夹名）。首次同步时按 `.project/project.json` 的 `screen_orientation` 生成。
@@ -20,6 +20,7 @@
 - UI 布局：项目的 `.ui.json` 要放在 `assets/` 下，Maker 控制台的 UI 编辑器只扫 `assets/`。`ui-check.ps1` 只读，`scripts/` 下有项目布局（框架的 `scripts/sumeru/` 除外）或 `assets/` 下的布局缺 `.meta` 时提示，退出码 1。`play.ps1`、`sync.ps1` 会自动调用它，`shot.sh` 只查位置；都只提示，不拦。规范见 [MAKER_UI.md](../../scripts/sumeru/toolkit/uikit/MAKER_UI.md#规范)。
 - Git Bash 不要用 `cmd //c 中文.cmd`（文件名会乱码），用上面的 `.sh` 入口。
 - 发布物料：本地文件（`docs/publish-materials/`）、`project.json`（`assets`，有 `dc_publish_sync` 时还有 `baseFields`）、TapTap 草稿三处要一起改，只改本地会在上线时被 Maker 改回去。两张封面在 TapTap 的 `windows-exclusive` 模块，比例是 460:215 和 2:3。物料清单、换图步骤见 [publish/README.md](publish/README.md)。
+- 同步后自动提交：同步器把 `scripts/sumeru/`、`dev/sumeru/` 和根目录一键脚本提交成一个本地提交，说明是「🔄 chore(sumeru): 同步框架到 <框架版本>」。只提交这些路径，项目自己的改动（包括已暂存的）原样留着；框架内容没变化就不提交；不推送，推送照旧走 Maker 构建。缺 `.meta` 的文件生成后要另外提交。不想自动提交时加 `-NoCommit`。
 - 框架仓库：没有时同步器从 GitHub 克隆到项目同级的 `Sumeru.TapMaker`。拉取用 HTTPS，推送地址自动设成 SSH（`git@github.com:Losomz/Sumeru.TapMaker.git`），推送不会弹 GitHub 登录窗口，前提是本机配好了 GitHub 的 SSH key。已有的仓库推送地址还是默认 HTTPS 的，同步时也会顺手改掉。
 - 论坛公告：更新公告、新手教程用 `taptap-cli` 发帖，再挂到详情页「活动与公告」。发布撤不回、挂上即上线，先给用户看预览再动手。更新公告标题带版本号「【更新公告】v0.0.N …」。流程见 [publish/论坛公告.md](publish/论坛公告.md)。
 - 运行时是 GUI 程序，启动不会多出控制台；双击 `.cmd` 的黑窗口成功即关，出错才停住。
