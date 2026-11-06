@@ -20,4 +20,5 @@
 - UI 布局：项目的 `.ui.json` 要放在 `assets/` 下，Maker 控制台的 UI 编辑器只扫 `assets/`。`ui-check.ps1` 只读，`scripts/` 下有项目布局（框架的 `scripts/sumeru/` 除外）或 `assets/` 下的布局缺 `.meta` 时提示，退出码 1。`play.ps1`、`sync.ps1` 会自动调用它，`shot.sh` 只查位置；都只提示，不拦。规范见 [MAKER_UI.md](../../scripts/sumeru/toolkit/uikit/MAKER_UI.md#规范)。
 - Git Bash 不要用 `cmd //c 中文.cmd`（文件名会乱码），用上面的 `.sh` 入口。
 - 发布物料：本地文件（`docs/publish-materials/`）、`project.json`（`assets`，有 `dc_publish_sync` 时还有 `baseFields`）、TapTap 草稿三处要一起改，只改本地会在上线时被 Maker 改回去。两张封面在 TapTap 的 `windows-exclusive` 模块，比例是 460:215 和 2:3。物料清单、换图步骤见 [publish/README.md](publish/README.md)。
+- 论坛公告：更新公告、新手教程用 `taptap-cli` 发帖，再挂到详情页「活动与公告」。发布撤不回、挂上即上线，先给用户看预览再动手。流程见 [publish/论坛公告.md](publish/论坛公告.md)。
 - 运行时是 GUI 程序，启动不会多出控制台；双击 `.cmd` 的黑窗口成功即关，出错才停住。
