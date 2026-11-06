@@ -15,6 +15,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoUrl = "https://github.com/Losomz/Sumeru.TapMaker.git"
+# 推送走 SSH：拉取公开仓库用 HTTPS 不用登录，推送走 HTTPS 会弹 GitHub 登录窗口。
+$pushUrl = "git@github.com:Losomz/Sumeru.TapMaker.git"
 if ((Split-Path -Leaf $PSScriptRoot) -ne "sumeru" -or (Split-Path -Leaf (Split-Path -Parent $PSScriptRoot)) -ne "dev") {
     throw "同步器必须位于 dev/sumeru/ 目录：$PSScriptRoot"
 }
@@ -63,6 +65,13 @@ if (-not (Test-Path -LiteralPath (Join-Path $Source ".git"))) {
         git -C $Source pull --ff-only
         if ($LASTEXITCODE -ne 0) { throw "更新框架仓库失败" }
     }
+}
+# 推送地址还是默认 HTTPS 时改成 SSH，只改推送、拉取照旧；自己改过的地址不动。
+$currentPush = ""
+try { $currentPush = (git -C $Source remote get-url --push origin 2>$null) } catch { }
+if ($currentPush -eq $repoUrl) {
+    git -C $Source remote set-url --push origin $pushUrl
+    Write-Host "框架仓库推送地址改为 SSH：$pushUrl"
 }
 $Source = (Resolve-Path -LiteralPath $Source).Path
 if ($Source -eq $Project) { throw "目标项目不能是框架仓库本身" }
