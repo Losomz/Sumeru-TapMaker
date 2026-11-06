@@ -176,12 +176,15 @@ function Commit-Synced {
     if ($LASTEXITCODE -ne 0) { Write-Host "暂存框架内容失败，没有提交" -ForegroundColor Yellow; return }
     $changed = @(git -C $Project diff --cached --name-only -- $paths)
     if ($changed.Count -eq 0) { Write-Host "框架内容和上次提交一致，不用提交"; return }
-    # 提交说明走标准输入并用 UTF-8，避免 Windows PowerShell 传参时中文、引号出错。
-    $saved = $OutputEncoding
-    $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
-    "🔄 chore(sumeru): 同步框架到 $commit" | git -C $Project commit -q -F - -- $paths
-    $ok = $LASTEXITCODE -eq 0
-    $OutputEncoding = $saved
+    # 提交说明写进 UTF-8 临时文件再交给 git：Windows PowerShell 直接传参或走管道都会把中文变成问号。
+    $msgFile = Join-Path ([System.IO.Path]::GetTempPath()) ("sumeru-sync-" + $PID + ".txt")
+    try {
+        [System.IO.File]::WriteAllText($msgFile, "🔄 chore(sumeru): 同步框架到 $commit", (New-Object System.Text.UTF8Encoding($false)))
+        git -C $Project commit -q -F $msgFile -- $paths
+        $ok = $LASTEXITCODE -eq 0
+    } finally {
+        Remove-Item -LiteralPath $msgFile -Force -ErrorAction SilentlyContinue
+    }
     if ($ok) { Write-Host ("已提交同步的框架内容（{0} 个文件，未推送）" -f $changed.Count) }
     else { Write-Host "提交失败，同步的文件已在工作区，请手动提交" -ForegroundColor Yellow }
 }
