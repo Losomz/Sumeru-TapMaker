@@ -39,8 +39,7 @@ UIKit:Attach(app,metrics)
 - 框架内置控件只有 `FrameworkButton`、`FrameworkToggle`、`FrameworkScrollView`。
 - `Configure` 必须在 `RegisterPanel` 之前调用；配置在 `Destroy` 后保留。
 - App 约定：`app.dirty` 为真时下一帧刷新全部可见页面；`metrics(app)` 返回 `w,h,vw,vh,safe{left,right},top,map,capsule,background`。
-- 业务画面框按 `metrics` 放在安全区内，超出部分裁掉；框外露出根容器的 `background` 底色。
-- 全屏底层 `UIKit:Backdrop()` 位于画面框之下，铺满整个屏幕，包括刘海、摄像头和底部手势条等安全区外区域，不接收输入。业务在这里挂背景控件，背景就能延伸到安全区外，按钮和文字仍留在安全区内。根容器在首次 `Flush` 时建立，之前返回 `nil`；挂上的控件由业务自己移除。
+- `UIKit:Backdrop()` 返回不受安全区限制的全屏底层，可挂背景等需要铺满全屏的控件。
 
 项目需要为所有 JSON 控件注入统一外观时，可调用 `require("sumeru.toolkit.uikit.Json").SetWidgetInitializer(fn)`。回调接收 Widget，在每次加载模板时遍历执行，包含动态条目的控件；不设置时保持默认行为。业务布局仍保存在 JSON 中。
 
