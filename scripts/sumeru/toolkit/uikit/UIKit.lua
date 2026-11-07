@@ -1,6 +1,7 @@
 -- 单一 UI 根容器，独立 MainShell / GameShell / OverlayPanel 生命周期。
 -- 业务约定：Attach(app,metrics) 的 app 可带 dirty 标记（为真时下一帧刷新全部可见页面）；
 -- metrics(app) 返回 {w,h,vw,vh,safe={left,right},top,map,capsule,background}。
+-- 业务画面框按 metrics 放在安全区内并裁剪；Backdrop() 是框下的全屏底层，供背景延伸到安全区外。
 -- 宿主判定、面板路径与 Shell 组件由 Configure 注入，框架不引用任何业务模块。
 local UI=require("urhox-libs/UI")
 local Registry=require("sumeru.toolkit.uikit.PanelRegistry")
@@ -34,7 +35,7 @@ local function reset()
  Kit.pageKey_=false;Kit.overlayKey_=false;Kit.pageProps_={};Kit.openRevision_={}
  Kit.structureDirty_=true;Kit.dataDirty_=true;Kit.metricsKey_=nil;Kit.app_=nil
  Kit.noticeText_="";Kit.noticeTime_=0;Kit.noticeDuration_=0;Kit.noticeRevision_=0;Kit.noticeColor_=nil
- Kit.root_=nil;Kit.frame_=nil;Kit.host_=nil;Kit.phaseResolver_=nil;Kit.metrics_=nil
+ Kit.root_=nil;Kit.backdrop_=nil;Kit.frame_=nil;Kit.host_=nil;Kit.phaseResolver_=nil;Kit.metrics_=nil
 end
 -- 注入业务配置：host(app) 返回宿主 Shell 名，allows(def,app) 判断面板是否允许出现，
 -- panelRoot 为面板约定根路径，componentRoot 为未登记组件的查找根路径，shellComponents 为各 Shell 预加载组件，
@@ -183,13 +184,18 @@ end
 function Kit:destroyEntry_(entry,reason)
  entry:Destroy(reason)
 end
--- 创建轻量基础容器；整个应用只调用一次 SetRoot，直至关闭应用。
+-- 创建轻量基础容器：根容器铺底色，其下先放不裁剪、不避让安全区的全屏底层，再放裁剪到安全区内的业务画面框；整个应用只调用一次 SetRoot，直至关闭应用。
 function Kit:ensureRoot_(metrics)
  if self.root_ then return end
  self.root_=UI.Panel{width="100%",height="100%",pointerEvents="box-none",backgroundColor=metrics.background}
+ self.backdrop_=UI.Panel{position="absolute",left=0,top=0,width="100%",height="100%",pointerEvents="none"}
  self.frame_=UI.Panel{position="absolute",left=0,top=0,width=metrics.w,height=metrics.h,overflow="hidden",pointerEvents="box-none"}
- self.root_:AddChild(self.frame_);UI.SetRoot(self.root_,true)
+ self.root_:AddChild(self.backdrop_);self.root_:AddChild(self.frame_);UI.SetRoot(self.root_,true)
 end
+-- 返回全屏底层：位于业务画面框之下，铺满整个屏幕（含刘海、摄像头和底部手势条等安全区外区域），不接收输入；
+-- 业务可在其中挂背景控件，让背景延伸到安全区外。根容器建立前（首次 Flush 之前）返回 nil。
+---@return Widget?
+function Kit:Backdrop() return self.backdrop_ end
 -- 只建立当前业务 Shell 和独立 OverlayPanel；路径按面板根路径约定推导，预加载组件取自配置。
 function Kit:mountShell_(name,metrics)
  local key=name=="overlay" and "overlay" or name
