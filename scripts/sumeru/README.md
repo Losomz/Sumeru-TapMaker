@@ -13,6 +13,7 @@
 - [LoadKit：资源分包按需下载与后台预取](toolkit/loadkit/README.md)
 - [AdKit：激励视频与广告位配置](toolkit/adkit/README.md)
 - [PoolKit：对象池与帧槽位池（按 System 注册）](toolkit/poolkit/README.md)
+- [TickKit：更新调度、时间线倍速与暂停（按 System 注册）](toolkit/tickkit/README.md)
 
 ## 接入游戏项目
 
