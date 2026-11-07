@@ -92,10 +92,10 @@ Maker 有两种表现，看 `project.json` 里有没有 `dc_publish_sync`：
 5. **`game_material/` 不能提交**：Maker 远端会拒绝推送。它下面多半是 Maker 最早生成的 AI 图。
 6. **不要随手点管理发布页的「使用本地资料」**：old-street-forge 点过之后，图片路径被改回 `game_material/` 里的旧 AI 图，`project.json` 里还多出了 `dc_publish_sync`。
 7. **截图只用实机截图**：不要用 AI 生成的截图。
-8. **我们的版本号：正式发布前一律 `0.0.N`**：每出一版 N 加 1。只有用户明确说「正式发布」才进 1（第一次是 `1.0.0`）。
-   - 用在我们自己管的地方：更新日志（目录名和正文）、论坛更新公告的标题（「【更新公告】v0.0.N 一句话亮点」）、游戏里自己上报的版本号（如数据后台的 `appVersion`）。
+8. **版本号跟 Maker 走 `1.0.N`，论坛公告只写后两段 `v0.N`**：
+   - 游戏里自己的版本号（设置页角标、数据后台上报的 `appVersion`）和更新日志目录名，都用本次出包的 Maker 版本，即 `project.json` 的 `version` 加 1。出包前先对齐。
+   - 论坛更新公告的标题和正文「版本：」那行只写后两段：Maker 1.0.37 写 `v0.37`。
    - `project.json` 的 `version` 归 Maker 管，不要手动改：每次构建后的同步提交都会改回 Maker 自己的编号（上一版 +1）。2026-11-04 old-street-forge 改成 0.0.8 推了两次，两次都被改回 1.0.8。
-   - 对照：old-street-forge 的 N 和 Maker 版本最后一位一致（Maker 1.0.8 = 0.0.8）。
 9. **推送被拒怎么办**：如果报 `push-to-checkout hook declined`，而远端又没有新提交，说明 Maker 云端有一份没提交的 `project.json`（管理发布页写的发布记录）。处理步骤（`maker.js` 在 `~/.taptap-maker/mcp-runtime/<版本>/dist/`）：
    ```
    node <maker.js> git cloud-status --target-dir <项目>
@@ -141,4 +141,4 @@ Maker 有两种表现，看 `project.json` 里有没有 `dc_publish_sync`：
 
 - 先建草稿，把预览给用户看；用户说「可以发」才发布，发出去撤不回。
 - 挂「活动与公告」一建就上线：链接只认 `/moment/<编号>`，置顶位置和结束时间要先问用户，公告位只有 2 个。
-- 更新公告标题带版本号：「【更新公告】v0.0.N 一句话亮点」，和正文「版本：」那行一致。
+- 更新公告标题带版本号：「【更新公告】v0.N 一句话亮点」（Maker 版本后两段），和正文「版本：」那行一致。
