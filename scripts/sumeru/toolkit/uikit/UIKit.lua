@@ -1,6 +1,7 @@
 -- 单一 UI 根容器，独立 MainShell / GameShell / OverlayPanel 生命周期。
 -- 业务约定：Attach(app,metrics) 的 app 可带 dirty 标记（为真时下一帧刷新全部可见页面）；
--- metrics(app) 返回 {w,h,vw,vh,safe={left,right},top,map,capsule,background}。
+-- metrics(app) 返回 {w,h,vw,vh,map,capsule,background}；画面框为整屏高、水平居中的 w 宽一列，不处理安全区，
+-- 需要让开刘海、摄像头或手势条的面板自行用 SafeArea 处理。
 -- 宿主判定、面板路径与 Shell 组件由 Configure 注入，框架不引用任何业务模块。
 local UI=require("urhox-libs/UI")
 local Registry=require("sumeru.toolkit.uikit.PanelRegistry")
@@ -34,7 +35,7 @@ local function reset()
  Kit.pageKey_=false;Kit.overlayKey_=false;Kit.pageProps_={};Kit.openRevision_={}
  Kit.structureDirty_=true;Kit.dataDirty_=true;Kit.metricsKey_=nil;Kit.app_=nil
  Kit.noticeText_="";Kit.noticeTime_=0;Kit.noticeDuration_=0;Kit.noticeRevision_=0;Kit.noticeColor_=nil
- Kit.root_=nil;Kit.backdrop_=nil;Kit.frame_=nil;Kit.host_=nil;Kit.phaseResolver_=nil;Kit.metrics_=nil
+ Kit.root_=nil;Kit.frame_=nil;Kit.host_=nil;Kit.phaseResolver_=nil;Kit.metrics_=nil
 end
 -- 注入业务配置：host(app) 返回宿主 Shell 名，allows(def,app) 判断面板是否允许出现，
 -- panelRoot 为面板约定根路径，componentRoot 为未登记组件的查找根路径，shellComponents 为各 Shell 预加载组件，
@@ -183,17 +184,13 @@ end
 function Kit:destroyEntry_(entry,reason)
  entry:Destroy(reason)
 end
--- 创建轻量基础容器：全屏底层在下、安全区内的画面框在上；整个应用只调用一次 SetRoot，直至关闭应用。
+-- 创建轻量基础容器；整个应用只调用一次 SetRoot，直至关闭应用。
 function Kit:ensureRoot_(metrics)
  if self.root_ then return end
  self.root_=UI.Panel{width="100%",height="100%",pointerEvents="box-none",backgroundColor=metrics.background}
- self.backdrop_=UI.Panel{position="absolute",left=0,top=0,width="100%",height="100%",pointerEvents="none"}
  self.frame_=UI.Panel{position="absolute",left=0,top=0,width=metrics.w,height=metrics.h,overflow="hidden",pointerEvents="box-none"}
- self.root_:AddChild(self.backdrop_);self.root_:AddChild(self.frame_);UI.SetRoot(self.root_,true)
+ self.root_:AddChild(self.frame_);UI.SetRoot(self.root_,true)
 end
--- 返回不受安全区限制的全屏底层（不接收输入），首次 Flush 前为 nil。
----@return Widget?
-function Kit:Backdrop() return self.backdrop_ end
 -- 只建立当前业务 Shell 和独立 OverlayPanel；路径按面板根路径约定推导，预加载组件取自配置。
 function Kit:mountShell_(name,metrics)
  local key=name=="overlay" and "overlay" or name
@@ -260,10 +257,10 @@ function Kit:Flush(app)
  if not self.app_ then return end
  self.app_=app or self.app_;self:ensureRoot_(self.metrics_(self.app_))
  local m=self.metrics_(self.app_)
- local left=m.safe.left+(m.vw-m.safe.left-m.safe.right-m.w)/2
- local signature=table.concat({m.vw,m.vh,left,m.top,m.w,m.h},":")
+ local left=(m.vw-m.w)/2
+ local signature=table.concat({m.vw,m.vh,m.w,m.h},":")
  local resized=signature~=self.metricsKey_
- if resized then self.frame_:SetStyle({left=left,top=m.top,width=m.w,height=m.h});self.metricsKey_=signature end
+ if resized then self.frame_:SetStyle({left=left,top=0,width=m.w,height=m.h});self.metricsKey_=signature end
  local keys=self:desiredKeys_(self.app_);local key=table.concat(keys,"|")
  for _,entry in ipairs(self.active_) do
   if entry.def.scope and entry.scope~=entry.def.scope(self.app_) then self.structureDirty_=true;break end
