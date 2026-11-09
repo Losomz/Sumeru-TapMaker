@@ -96,7 +96,7 @@ Maker 有两种表现，看 `project.json` 里有没有 `dc_publish_sync`：
    - 游戏里自己的版本号（设置页角标、数据后台上报的 `appVersion`）和更新日志目录名，都用本次出包的 Maker 版本，即 `project.json` 的 `version` 加 1。出包前先对齐。
    - 论坛更新公告的标题和正文「版本：」那行只写后两段：Maker 1.0.37 写 `v0.37`。
    - `project.json` 的 `version` 归 Maker 管，不要手动改：每次构建后的同步提交都会改回 Maker 自己的编号（上一版 +1）。2026-11-04 old-street-forge 改成 0.0.8 推了两次，两次都被改回 1.0.8。
-9. **推送被拒怎么办**：如果报 `push-to-checkout hook declined`，而远端又没有新提交，说明 Maker 云端有一份没提交的 `project.json`（管理发布页写的发布记录）。处理步骤（`maker.js` 在 `~/.taptap-maker/mcp-runtime/<版本>/dist/`）：
+9. **推送被拒怎么办**：如果报 `push-to-checkout hook declined` 或 `[pre-receive] 推送被拒`，而远端又没有新提交，说明 Maker 云端有一份没提交的 `project.json`（管理发布页写的发布记录）。处理步骤（`maker.js` 在 `~/.taptap-maker/mcp-runtime/<版本>/dist/`）：
    ```
    node <maker.js> git cloud-status --target-dir <项目>
    node <maker.js> git cloud-diff --target-dir <项目>
@@ -105,6 +105,11 @@ Maker 有两种表现，看 `project.json` 里有没有 `dc_publish_sync`：
    ```
    - diff 里只有发布记录（`dcVersion`、`dcStatus`、`updated_at` 等）时，直接提交。如果它把图片改成了旧图，先和用户确认。
    - 合并时保留自己的图片地址，然后重新构建。
+   - Maker 工具这时可能提示重新登录（`taptap-maker login`），这不是鉴权问题，不用登录。
+10. **不上电脑端**：`project.json` 的 `taptap_publish.app_platforms` 写 `"1"`。现有项目都是 `"1,2"`，会连电脑端一起上架，doomsday-miner 2026-11-06 上线时电脑端就是这样跟着开放的。
+    - 改完构建，点出包后用 `taptap-cli app get-app-module` 读草稿的 `platform-status`，确认只剩手机。`"1"` 只要手机是从现有的值推断的，2026-11-09 改了 doomsday-miner，还没读回确认，这一步不能省。
+    - 已上线的电脑端要等新版本上线才会消失。
+    - 挂「活动与公告」时 `top_types` 不要带 `pc_inventory`。
 
 ## 做物料要注意
 
