@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    # 框架仓库本地路径，默认找与游戏项目同级的 Sumeru.TapMaker 或 sumeru-tapmaker。
+    # 框架仓库本地路径，默认是与游戏项目同级的 Sumeru-TapMaker。
     [string]$Source = "",
     # 目标游戏项目根目录；在框架仓库里运行时必填（安装到新项目或迁移老项目）。
     [string]$Project = "",
@@ -16,9 +16,9 @@ param(
 # 项目里双击根目录「同步框架.cmd」运行；在框架仓库里用 -Project 指定目标项目。
 $ErrorActionPreference = "Stop"
 
-$repoUrl = "https://github.com/Losomz/Sumeru.TapMaker.git"
+$repoUrl = "https://github.com/Losomz/Sumeru-TapMaker.git"
 # 推送走 SSH：拉取公开仓库用 HTTPS 不用登录，推送走 HTTPS 会弹 GitHub 登录窗口。
-$pushUrl = "git@github.com:Losomz/Sumeru.TapMaker.git"
+$pushUrl = "git@github.com:Losomz/Sumeru-TapMaker.git"
 if ((Split-Path -Leaf $PSScriptRoot) -ne "sumeru" -or (Split-Path -Leaf (Split-Path -Parent $PSScriptRoot)) -ne "dev") {
     throw "同步器必须位于 dev/sumeru/ 目录：$PSScriptRoot"
 }
@@ -38,18 +38,10 @@ if (-not (Test-GameProject $here)) {
 if (-not $Project) { $Project = $here }
 $Project = (Resolve-Path -LiteralPath $Project).Path
 if (-not (Test-Path -LiteralPath (Join-Path $Project "scripts"))) { throw "不是游戏项目（缺少 scripts/）：$Project" }
-# 默认用与游戏项目同级的框架仓库，两种目录名都认；都没有才克隆到 Sumeru.TapMaker。
+# 默认用与游戏项目同级的 Sumeru-TapMaker，没有就克隆到那里。
 if (-not $Source) {
     $parent = Split-Path -Parent $Project
-    $Source = Join-Path $parent "Sumeru.TapMaker"
-    foreach ($name in @("Sumeru.TapMaker", "sumeru-tapmaker")) {
-        $candidate = Join-Path $parent $name
-        if ((Test-Path -LiteralPath (Join-Path $candidate ".git")) -and
-            (Test-Path -LiteralPath (Join-Path $candidate "dev\sumeru\sync.ps1"))) {
-            $Source = $candidate
-            break
-        }
-    }
+    $Source = Join-Path $parent "Sumeru-TapMaker"
 }
 
 # 框架仓库不存在时克隆；存在时按参数或询问决定是否快进拉取，避免覆盖本地未推送的框架改动。

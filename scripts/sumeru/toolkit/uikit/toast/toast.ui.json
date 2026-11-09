@@ -1,6 +1,18 @@
 {"type":"Panel","id":"sumeru-toast-root","position":"absolute","left":0,"top":0,"width":"$w:480","height":"$h:853","pointerEvents":"box-none","children":[
- {"type":"Panel","id":"sumeru-toast-bar","position":"absolute","left":40,"top":0,"width":400,"height":48,"opacity":0,"pointerEvents":"none","children":[
-  {"type":"Label","id":"sumeru-toast-text","position":"absolute","left":16,"top":10,"width":368,"height":28,"text":"","fontSize":16,"lineHeight":1,
+ {"type":"Panel","id":"sumeru-toast-bar-1","position":"absolute","left":40,"top":0,"width":400,"height":48,"opacity":0,"pointerEvents":"none","children":[
+  {"type":"Label","id":"sumeru-toast-text-1","position":"absolute","left":16,"top":10,"width":368,"height":28,"text":"","fontSize":16,"lineHeight":1,
+   "pointerEvents":"none","textAlign":"center","verticalAlign":"middle","whiteSpace":"normal"}
+ ]},
+ {"type":"Panel","id":"sumeru-toast-bar-2","position":"absolute","left":40,"top":0,"width":400,"height":48,"opacity":0,"pointerEvents":"none","children":[
+  {"type":"Label","id":"sumeru-toast-text-2","position":"absolute","left":16,"top":10,"width":368,"height":28,"text":"","fontSize":16,"lineHeight":1,
+   "pointerEvents":"none","textAlign":"center","verticalAlign":"middle","whiteSpace":"normal"}
+ ]},
+ {"type":"Panel","id":"sumeru-toast-bar-3","position":"absolute","left":40,"top":0,"width":400,"height":48,"opacity":0,"pointerEvents":"none","children":[
+  {"type":"Label","id":"sumeru-toast-text-3","position":"absolute","left":16,"top":10,"width":368,"height":28,"text":"","fontSize":16,"lineHeight":1,
+   "pointerEvents":"none","textAlign":"center","verticalAlign":"middle","whiteSpace":"normal"}
+ ]},
+ {"type":"Panel","id":"sumeru-toast-bar-4","position":"absolute","left":40,"top":0,"width":400,"height":48,"opacity":0,"pointerEvents":"none","children":[
+  {"type":"Label","id":"sumeru-toast-text-4","position":"absolute","left":16,"top":10,"width":368,"height":28,"text":"","fontSize":16,"lineHeight":1,
    "pointerEvents":"none","textAlign":"center","verticalAlign":"middle","whiteSpace":"normal"}
  ]}
 ]}

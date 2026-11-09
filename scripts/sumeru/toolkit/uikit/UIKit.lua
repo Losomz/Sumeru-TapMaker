@@ -34,7 +34,7 @@ local function reset()
  Kit.registry_=Registry.new(Kit.config_.panelRoot);Kit.panels_={};Kit.order_={};Kit.active_={};Kit.shells_={}
  Kit.pageKey_=false;Kit.overlayKey_=false;Kit.pageProps_={};Kit.openRevision_={}
  Kit.structureDirty_=true;Kit.dataDirty_=true;Kit.metricsKey_=nil;Kit.app_=nil
- Kit.noticeText_="";Kit.noticeTime_=0;Kit.noticeDuration_=0;Kit.noticeRevision_=0;Kit.noticeColor_=nil
+ Kit.noticeList_={};Kit.noticeSeq_=0;Kit.noticeRevision_=0
  Kit.root_=nil;Kit.frame_=nil;Kit.host_=nil;Kit.phaseResolver_=nil;Kit.metrics_=nil
 end
 -- 注入业务配置：host(app) 返回宿主 Shell 名，allows(def,app) 判断面板是否允许出现，
@@ -56,26 +56,33 @@ function Kit:Attach(app,metrics)
  self:MarkStructureDirty()
 end
 -- 显示一次性通用提示，并让 Toast 层自行管理生命周期；不传时长时按字数给。
--- color 可选：这一条的字色（如好消息绿、坏消息红），不传用皮肤字色。
+-- 可以几条同时在：新的排在最下面，各自计时消失，满了先挤掉最早的；一样的字不另起一条，移到最下面重新计时。
+-- color 可选：这一条的字色（如好消息绿、坏消息红），不传用皮肤字色。传空文字清掉全部。
 function Kit:ShowNotice(text,duration,color)
  local message=tostring(text or "")
- local seconds=math.max(.1,tonumber(duration) or Toast.Duration(message,Toast.Resolve(self.config_.toast).style))
- self.noticeText_=message;self.noticeColor_=color
- self.noticeDuration_=seconds
- self.noticeTime_=message~="" and seconds or 0
+ local list=self.noticeList_
+ for i=#list,1,-1 do if message=="" or list[i].text==message then table.remove(list,i) end end
+ if message~="" then
+  local seconds=math.max(.1,tonumber(duration) or Toast.Duration(message,Toast.Resolve(self.config_.toast).style))
+  self.noticeSeq_=self.noticeSeq_+1
+  list[#list+1]={seq=self.noticeSeq_,text=message,color=color,duration=seconds,time=seconds}
+  while #list>Toast.MAX do table.remove(list,1) end
+ end
  self.noticeRevision_=self.noticeRevision_+1
  self:MarkStructureDirty();self:MarkDataDirty()
 end
 -- 判断当前是否存在仍在显示的通用提示。
-function Kit:HasNotice() return self.noticeText_~="" and self.noticeTime_>0 end
--- 读取当前提示文本，供 Toast 控制器刷新文字。
-function Kit:GetNotice() return self.noticeText_ end
--- 读取当前提示动画修订号，供重复提示重新播放动画。
+function Kit:HasNotice() return #self.noticeList_>0 end
+-- 读取最新一条提示的文本，没有时返回空串。
+function Kit:GetNotice()
+ local last=self.noticeList_[#self.noticeList_]
+ return last and last.text or ""
+end
+-- 读取还在显示的全部提示，最早的在前，供 Toast 控制器排版。
+---@return {seq:integer,text:string,color:number[]?,duration:number,time:number}[]
+function Kit:GetNotices() return self.noticeList_ end
+-- 读取提示修订号：增删任何一条都会变，供 Toast 控制器重排和播放动画。
 function Kit:GetNoticeRevision() return self.noticeRevision_ end
--- 读取当前提示持续时间，供 Toast 控制器同步动画长度。
-function Kit:GetNoticeDuration() return self.noticeDuration_ end
--- 读取当前提示的字色；nil 表示用皮肤字色。
-function Kit:GetNoticeColor() return self.noticeColor_ end
 -- 注册 JSON 面板，禁止旧 native 战场路径。
 function Kit:RegisterPanel(key,definition)
  local def=copy(definition,{key=key,index=#self.order_+1})
@@ -243,10 +250,17 @@ function Kit:refresh_()
 end
 -- 推进当前宿主和面板视觉；模拟系统由 App 独立推进。
 function Kit:Update(dt)
- if self.noticeTime_>0 then
-  self.noticeTime_=self.noticeTime_-math.max(0,dt or 0)
-  if self.noticeTime_<=0 then
-   self.noticeTime_=0;self.noticeText_="";self:MarkStructureDirty();self:MarkDataDirty()
+ local notices=self.noticeList_
+ if #notices>0 then
+  local step,expired=math.max(0,dt or 0),false
+  for i=#notices,1,-1 do
+   local notice=notices[i]
+   notice.time=notice.time-step
+   if notice.time<=0 then table.remove(notices,i);expired=true end
+  end
+  if expired then
+   self.noticeRevision_=self.noticeRevision_+1
+   self:MarkStructureDirty();self:MarkDataDirty()
   end
  end
  for _,name in ipairs({self.host_,"overlay"}) do local e=self.shells_[name];if e then e:Update(dt) end end

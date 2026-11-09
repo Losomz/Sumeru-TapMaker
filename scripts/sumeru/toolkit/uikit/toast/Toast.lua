@@ -1,12 +1,10 @@
--- 通用提示（Toast）：框架内置的一条提示，默认开启。尺寸、字号、自适应、位置、动画和时长由框架定，
--- 项目只在 UIKit:Configure({toast=...}) 里换底图、文字，必要时按项改默认样式；量字折行、替换旧提示等逻辑不开放。
+-- 通用提示（Toast）：框架内置，默认开启。可以几条同时在，新的排在最下面，各自计时消失。尺寸、字号、自适应、位置、动画和时长由框架定，
+-- 项目只在 UIKit:Configure({toast=...}) 里换底图、文字，必要时按项改默认样式；量字折行、排队等逻辑不开放。
 local TextFit=require("sumeru.toolkit.uikit.TextFit")
 ---@class SumeruToast
 ---@field ctx table
----@field bar table 底板
----@field text table 文字 Label
+---@field slots {bar:table,text:table,fit:SumeruTextFitCache,seq:integer?}[] 固定的几个槽位，seq 是正在显示哪一条
 ---@field skin SumeruToastSkin
----@field fit SumeruTextFitCache
 ---@field lineFit SumeruTextFitCache 一行高度的测量缓存
 ---@field revision integer
 ---@field warned string?
@@ -14,12 +12,14 @@ local Toast={};Toast.__index=Toast
 Toast.KEY="sumeru-toast"
 Toast.TEMPLATE="sumeru/toolkit/uikit/toast/toast.ui.json"
 Toast.CONTROLLER="sumeru.toolkit.uikit.toast.Toast"
+-- 同屏最多几条，和 toast.ui.json 里的槽位数一致。
+Toast.MAX=4
 -- 默认样式：项目 style 里写了哪项就覆盖哪项。
 ---@type SumeruToastStyle
 Toast.DEFAULT={
  fontSize=16,lineHeight=1,padX=16,padY=10,
  minWidth=160,maxWidth=400,margin=24,minHeight=48,warnLines=3,
- anchorY=.42,rise=12,fadeIn=.15,fadeOut=.3,
+ anchorY=.42,gap=6,rise=12,fadeIn=.15,fadeOut=.3,
  minDuration=2,maxDuration=5,
 }
 -- 没给底图、文字时用的默认外观。
@@ -52,17 +52,21 @@ end
 function Toast.new() return setmetatable({},Toast) end
 -- 套用皮肤：有底图按九宫格拉伸，没有就用默认底色描边；文字套字体、字色、字号和行高。
 function Toast:Init(ctx)
- self.ctx=ctx;self.fit={};self.lineFit={};self.revision=-1
- self.bar=ctx.json:Find("sumeru-toast-bar");self.text=ctx.json:Find("sumeru-toast-text")
+ self.ctx=ctx;self.lineFit={};self.revision=-1;self.slots={}
  local skin=Toast.Resolve(ctx.ui.config_.toast);self.skin=skin
  local bg=skin.background
- if bg.image then
-  self.bar:SetStyle({backgroundImage=bg.image,backgroundFit="sliced",backgroundSlice=bg.slice,backgroundColor={0,0,0,0},borderWidth=0,borderRadius=0})
- else
-  self.bar:SetStyle({backgroundColor=bg.color,borderColor=bg.borderColor,borderWidth=bg.borderWidth or 0,borderRadius=bg.borderRadius or 0})
- end
  local text=skin.text
- self.text:SetStyle({fontSize=skin.style.fontSize,lineHeight=skin.style.lineHeight,fontColor=text.color or Toast.DEFAULT_TEXT.color,fontFamily=text.font})
+ for i=1,Toast.MAX do
+  local bar=ctx.json:Find("sumeru-toast-bar-"..i)
+  local label=ctx.json:Find("sumeru-toast-text-"..i)
+  if bg.image then
+   bar:SetStyle({backgroundImage=bg.image,backgroundFit="sliced",backgroundSlice=bg.slice,backgroundColor={0,0,0,0},borderWidth=0,borderRadius=0})
+  else
+   bar:SetStyle({backgroundColor=bg.color,borderColor=bg.borderColor,borderWidth=bg.borderWidth or 0,borderRadius=bg.borderRadius or 0})
+  end
+  label:SetStyle({fontSize=skin.style.fontSize,lineHeight=skin.style.lineHeight,fontColor=text.color or Toast.DEFAULT_TEXT.color,fontFamily=text.font})
+  self.slots[i]={bar=bar,text=label,fit={}}
+ end
  self:Resize(ctx)
 end
 -- 测量选项：与文字 Label 的字体参数一致，最大宽度按屏宽夹住。
@@ -71,44 +75,86 @@ function Toast:fitOptions_(w)
  return {fontSize=s.fontSize,fontFamily=self.skin.text.font,lineHeight=s.lineHeight,
   maxWidth=math.min(w-s.margin*2,s.maxWidth),minWidth=s.minWidth,minHeight=s.minHeight,padX=s.padX,padY=s.padY}
 end
--- 按当前文字自适应底板，并让底板中心落在 anchorY 处；超过 warnLines 行时提醒文案太长。
-function Toast:Layout(ctx)
- self.ctx=ctx;ctx.root:SetStyle({width=ctx.w,height=ctx.h})
- local message=ctx.ui:GetNotice();local opt=self:fitOptions_(ctx.w);local s=self.skin.style
- local width,height=TextFit.Apply(self.bar,self.text,message,opt,self.fit)
- self.bar:SetStyle({left=(ctx.w-width)/2,top=ctx.h*s.anchorY-height/2})
- -- 行数按实测的一行高度算（字体的行框通常比字号高），两边都先去掉测量余量。
+-- 哪个槽位在显示这一条；没有返回 nil。
+function Toast:slotOf_(seq)
+ for _,slot in ipairs(self.slots) do if slot.seq==seq then return slot end end
+ return nil
+end
+-- 超过 warnLines 行时提醒文案太长。行数按实测的一行高度算（字体的行框通常比字号高），两边都先去掉测量余量。
+function Toast:warnLong_(message,height,opt)
+ local s=self.skin.style
  local one=TextFit.Measure("字",{fontSize=opt.fontSize,fontFamily=opt.fontFamily,lineHeight=opt.lineHeight,maxWidth=1000000},self.lineFit)
  local lines=math.floor((height-s.padY*2-TextFit.SLACK)/math.max(1,one.textHeight-TextFit.SLACK)+.5)
  if lines>s.warnLines and self.warned~=message then
   self.warned=message;print("[Toast] 提示有 "..lines.." 行，超过 "..s.warnLines.." 行，文案太长："..message)
  end
 end
+-- 按当前文字自适应每张底板：第一张中心落在 anchorY 处，后面的依次往下排。
+function Toast:Layout(ctx)
+ self.ctx=ctx;ctx.root:SetStyle({width=ctx.w,height=ctx.h})
+ local opt=self:fitOptions_(ctx.w);local s=self.skin.style
+ local top=nil
+ for _,notice in ipairs(ctx.ui:GetNotices()) do
+  local slot=self:slotOf_(notice.seq)
+  if slot then
+   local width,height=TextFit.Apply(slot.bar,slot.text,notice.text,opt,slot.fit)
+   top=top or ctx.h*s.anchorY-height/2
+   slot.bar:SetStyle({left=(ctx.w-width)/2,top=top})
+   top=top+height+s.gap
+   self:warnLong_(notice.text,height,opt)
+  end
+ end
+end
 -- 屏幕尺寸变化时重排。
 function Toast:Resize(ctx) self:Layout(ctx) end
--- 提示修订号变化时重排并重播动画：淡入上移、停留、淡出再上移。
-function Toast:Refresh()
- local ui=self.ctx.ui;local revision=ui:GetNoticeRevision()
- if self.revision==revision then return end
- self.revision=revision
- -- 这一条指定了字色就用它，没指定回到皮肤字色。
- self.text:SetStyle({fontColor=ui.GetNoticeColor and ui:GetNoticeColor() or self.skin.text.color or Toast.DEFAULT_TEXT.color})
- self:Layout(self.ctx)
- local s=self.skin.style;local duration=ui:GetNoticeDuration()
+-- 收起一个槽位。
+function Toast:release_(slot)
+ slot.bar:StopAnimation()
+ slot.bar:SetStyle({opacity=0})
+ slot.seq=nil
+end
+-- 播放一条的动画：淡入上移、停留、淡出再上移。这一条指定了字色就用它，没指定回到皮肤字色。
+function Toast:play_(slot,notice)
+ local s=self.skin.style;local duration=notice.duration
  local a=math.min(.45,s.fadeIn/duration);local b=math.max(a,1-s.fadeOut/duration)
- self.bar:StopAnimation()
- self.bar:SetStyle({opacity=0,translateY=s.rise})
- self.bar:Animate({
+ slot.text:SetStyle({fontColor=notice.color or self.skin.text.color or Toast.DEFAULT_TEXT.color})
+ slot.bar:StopAnimation()
+ slot.bar:SetStyle({opacity=0,translateY=s.rise})
+ slot.bar:Animate({
   keyframes={[0]={opacity=0,translateY=s.rise},[a]={opacity=1,translateY=0},[b]={opacity=1,translateY=0},[1]={opacity=0,translateY=-s.rise*2}},
   duration=duration,easing="easeOut",fillMode="both",
  })
 end
+-- 提示修订号变化时：收起已结束的，给新来的分槽位，重排后播放新来的动画；还在显示的不打断。
+function Toast:Refresh()
+ local ui=self.ctx.ui;local revision=ui:GetNoticeRevision()
+ if self.revision==revision then return end
+ self.revision=revision
+ local notices=ui:GetNotices();local live={}
+ for _,notice in ipairs(notices) do live[notice.seq]=true end
+ for _,slot in ipairs(self.slots) do
+  if slot.seq and not live[slot.seq] then self:release_(slot) end
+ end
+ local fresh={}
+ for _,notice in ipairs(notices) do
+  if not self:slotOf_(notice.seq) then
+   local slot=self:slotOf_(nil)
+   if slot then slot.seq=notice.seq;fresh[#fresh+1]={slot=slot,notice=notice} end
+  end
+ end
+ self:Layout(self.ctx)
+ for _,item in ipairs(fresh) do self:play_(item.slot,item.notice) end
+end
 -- 首次显示时播放。
 function Toast:Show() self:Refresh() end
 -- 隐藏时停止动画，避免残留回调。
-function Toast:Hide() if self.bar then self.bar:StopAnimation() end end
+function Toast:Hide()
+ if not self.slots then return end
+ for _,slot in ipairs(self.slots) do self:release_(slot) end
+ self.revision=-1
+end
 -- 释放引用，控件由 UIKit 统一销毁。
-function Toast:Destroy() self.ctx=nil;self.bar=nil;self.text=nil end
+function Toast:Destroy() self.ctx=nil;self.slots=nil end
 return Toast
 
 -- 配置类型。
@@ -136,7 +182,8 @@ return Toast
 ---@field margin number 底板离屏幕左右边的最小距离
 ---@field minHeight number 底板最矮（一行）
 ---@field warnLines number 超过这么多行打日志提醒
----@field anchorY number 底板中心在屏高的比例
+---@field anchorY number 第一张底板中心在屏高的比例
+---@field gap number 几条提示之间的间距
 ---@field rise number 淡入上移距离；淡出再上移两倍
 ---@field fadeIn number 淡入秒数
 ---@field fadeOut number 淡出秒数
