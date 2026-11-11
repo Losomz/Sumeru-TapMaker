@@ -2,6 +2,17 @@
 
 可复用能力和使用经验随 `sumeru/` 目录一起迁移。项目专用资源、业务规则和美术规范留在项目中。
 
+## 事件中心
+
+`arch.events`（`framework/TypeEvent.lua`）。注册进架构的对象自带 `SendEvent`、`PostEvent`、`RegisterEvent`、`UnRegisterEvent`、`UnRegisterAllEvent`。
+
+- `obj:PostEvent(key, ...)`：先入队，由主循环每帧调一次 `arch.events:Drain()` 按序派发。**业务系统报告“发生了什么”用这个**，监听者不会插进一个动作的半路；派发时新 Post 的事件同一次处理，单次有上限，防止监听者互相 Post 成死循环。
+- `obj:SendEvent(key, ...)`：当场派发，只用在发送方必须等监听者跑完的场合。
+- key 必须是非空字符串，传错当场报错。事件名集中写成常量，别散落字符串。
+- 监听者报错只打印，不影响发送方和其他监听者。测试里设 `arch.events.strict = true`，报错会重新抛出。
+- 排查时设 `arch.events.trace = true`，打印每次派发。
+- 开新局、读档时用 `arch.events:ClearQueue()` 丢掉上一局没派发的事件。
+
 ## 工具包文档
 
 - [UIKit：面板宿主、安全区 SafeArea、内置通用提示 Toast、UI 绘制经验与九宫格接缝](toolkit/uikit/README.md)

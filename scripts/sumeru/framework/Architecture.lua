@@ -76,7 +76,7 @@ function Architecture:GetUtility(key) return self.container:Get(key.."@utility")
 
 -- 能力注入：为对象挂上架构引用与 ICan* 能力方法（不覆盖已有同名方法）。
 -- 注入后可用 obj:GetModel(k) / obj:GetSystem(k) / obj:GetUtility(k) /
--- obj:SendEvent(k,...) / obj:RegisterEvent(k,fn) / obj:UnRegisterEvent(k,fn) / obj:UnRegisterAllEvent()。
+-- obj:SendEvent(k,...)（当场派发）/ obj:PostEvent(k,...)（入队，等 Drain）/ obj:RegisterEvent(k,fn) / obj:UnRegisterEvent(k,fn) / obj:UnRegisterAllEvent()。
 function Architecture:Inject(obj)
  if type(obj)~="table" or obj.arch~=nil then return obj end
  local arch=self
@@ -85,6 +85,7 @@ function Architecture:Inject(obj)
  obj.GetSystem=obj.GetSystem or function(_,key) return arch:GetSystem(key) end
  obj.GetUtility=obj.GetUtility or function(_,key) return arch:GetUtility(key) end
  obj.SendEvent=obj.SendEvent or function(_,key,...) arch.events:Fire(key,...) end
+ obj.PostEvent=obj.PostEvent or function(_,key,...) arch.events:Post(key,...) end
  obj.RegisterEvent=obj.RegisterEvent or function(_,key,fn) arch.events:On(key,obj,fn) end
  obj.UnRegisterEvent=obj.UnRegisterEvent or function(_,key,fn) arch.events:Off(key,obj,fn) end
  obj.UnRegisterAllEvent=obj.UnRegisterAllEvent or function() arch.events:OffAll(obj) end
