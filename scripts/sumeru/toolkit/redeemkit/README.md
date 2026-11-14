@@ -26,7 +26,10 @@
 ```lua
 local RedeemKit=require("sumeru.toolkit.redeemkit")
 local C=require("game.config.Redeem")
-local kit=RedeemKit.new({clientId=C.clientId,json=cjson})
+-- 电脑上没有 TapTap 登录：给个固定测试 ID 才能拿真码试兑；没填 Client ID 时 simulate 走本地模拟，看发奖和提示
+local desktop=Platform.IsDesktopPlatform()
+local kit=RedeemKit.new({clientId=C.clientId,json=cjson,simulate=desktop,simulateItems=C.simulate,
+ userId=desktop and function() return RedeemKit.UserId() or "desktop-test" end or nil})
 
 function App:Redeem(code,onDone)
  kit:Redeem(code,function(ok,res)
@@ -45,8 +48,8 @@ end
 
 | 接口 | 说明 |
 |---|---|
-| `RedeemKit.new(opts)` | `clientId` 必填。`region`：`cn`（默认）或 `global`，两边的礼包数据不互通。`json`：编解码器，默认全局 `cjson`。`messages`：按键覆盖提示语。测试时可以注入 `http`、`userId`、`now`、`random` |
-| `kit:Redeem(code, callback)` | 输入先去掉空白、转大写。成功回调 `callback(true, {activityId, items={{name, number}}})`，失败回调 `callback(false, {code, message})`。每次只回调一次 |
+| `RedeemKit.new(opts)` | `clientId` 必填。`region`：`cn`（默认）或 `global`，两边的礼包数据不互通。`json`：编解码器，默认全局 `cjson`。`messages`：按键覆盖提示语。`simulate=true`（桌面本地开发）：没填 `clientId` 时不连 TapTap，每个码第一次按成功回调、发 `simulateItems`（默认钻石 ×100），同一个码再兑提示「已经领过了」；填了 `clientId` 就照常请求。测试时可以注入 `http`、`userId`、`now`、`random` |
+| `kit:Redeem(code, callback)` | 输入只去掉空白，大小写原样提交（TapTap 随机码是小写）。成功回调 `callback(true, {activityId, items={{name, number}}})`，失败回调 `callback(false, {code, message})`。每次只回调一次 |
 | `kit:IsBusy()` | 上一个请求还没返回 |
 | `RedeemKit.UserId()` | 当前 TapTap 账号 ID，依次尝试 `GetUserId()`、`clientCloud.userId`、`lobby:GetMyUserId()`。拿不到返回 nil |
 | `RedeemKit.Sign(ts, nonce, clientId)` | `sha1(ts .. nonce .. clientId)`，结果是小写十六进制 |
@@ -71,8 +74,11 @@ end
 | 100017 / 100025 | 已经领过了 |
 | 100006 / 100012 | 这个码领完了 |
 | 100008 | 兑换码过期了 |
+| `HTTP 451` | 兑换码不对（码不存在时 TapTap 回 451） |
 | `network` | 网络不好，稍后再试 |
 | 其他错误码，或 `HTTP 403` 这类 | 兑换失败（原因） |
+
+引擎（原生）遇到非 2xx 只把状态码交给 `OnError`，TapTap 的错误 JSON 拿不到，所以 TapTap 用 4xx 回的错误只能按状态码认。已实测：码不存在 451、签名错 422；其他错误先显示「兑换失败（HTTP 状态码）」，测到新的就往 `Messages` 里补。
 
 每次失败日志里都会打一行 `[RedeemKit] 兑换失败 error=… message=… dev=… hint=…`，排查先看这一行。
 

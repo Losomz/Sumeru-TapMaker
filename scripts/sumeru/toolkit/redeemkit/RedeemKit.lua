@@ -20,6 +20,8 @@ RedeemKit.Messages={
  [100025]="已经领过了",[100017]="已经领过了",
  [100006]="这个码领完了",[100012]="这个码领完了",
  [100008]="兑换码过期了",
+ -- 引擎（原生）遇到非 2xx 只给状态码、不给返回内容，只能按状态码认：实测码不存在是 451
+ ["HTTP 451"]="兑换码不对",
 }
 
 -- 当前 TapTap 账号的用户 ID（作为 character_id，TapTap 按它判断每人限领）；未登录、本地预览返回 nil。
@@ -42,13 +44,15 @@ end
 -- 请求签名：sha1(timestamp .. nonce_str .. client_id)，小写十六进制。
 function RedeemKit.Sign(timestamp,nonce,clientId) return Sha1.hex(tostring(timestamp)..nonce..clientId) end
 
--- 输入规整：去掉所有空白，转大写。
-function RedeemKit.Normalize(code) return (tostring(code or ""):gsub("%s+","")):upper() end
+-- 输入规整：只去掉所有空白，大小写原样（TapTap 随机生成的码是小写，后台定制码也可能混写）。
+function RedeemKit.Normalize(code) return (tostring(code or ""):gsub("%s+","")) end
 
 local function globalJson() local ok,v=pcall(function() return cjson end);return ok and v or nil end
 
 -- opts：clientId（开发者中心「游戏服务 → 应用配置」）、region（cn/global，默认 cn）、
 -- json（有 encode/decode 的编解码器，默认全局 cjson）、messages（覆盖提示）；
+-- simulate=true（桌面本地开发）：没配 clientId 时不连 TapTap，每个码第一次按成功回调、发 simulateItems，
+-- 同一个码再兑提示「已经领过了」，只用来走通发奖和提示；配了 clientId 就照常请求 TapTap。
 -- 测试注入：http（同运行时 http 的接口）、userId（函数）、now（秒级时间函数）、random（同 math.random）。
 function RedeemKit.new(opts)
  opts=opts or {}
@@ -63,6 +67,9 @@ function RedeemKit.new(opts)
  self.timeoutMs=opts.timeoutMs or 10000
  self.userAgent=opts.userAgent or "Mozilla/5.0"
  self.messages=setmetatable(opts.messages or {},{__index=RedeemKit.Messages})
+ self.simulate=opts.simulate==true
+ self.simulateItems=opts.simulateItems or {{name="钻石",number=100}}
+ self.simulated={}
  self.busy=false
  return self
 end
@@ -144,12 +151,25 @@ function RedeemKit:send_(body,done)
  if not ok then done(0,nil,tostring(err)) end
 end
 
+-- 桌面模拟：不发请求，每个码第一次成功，再兑就是「已经领过了」。
+function RedeemKit:simulate_(code,callback)
+ if self.simulated[code] then return self:fail_(callback,100025) end
+ self.simulated[code]=true
+ print("[RedeemKit] 模拟兑换（没配 Client ID，不连 TapTap）："..code)
+ local items={}
+ for i,it in ipairs(self.simulateItems) do items[i]={name=it.name,number=it.number} end
+ call(callback,true,{activityId="simulate",items=items})
+end
+
 -- 兑换一个码。callback(true,{activityId,items={{name,number}}}) 或 callback(false,{code,message})，只回调一次。
--- 码为空、没登录、上一个还没回来、没配 clientId 时当场失败，不发请求。
+-- 码为空、没登录、上一个还没回来、没配 clientId 时当场失败，不发请求（simulate 时没配 clientId 走本地模拟）。
 function RedeemKit:Redeem(code,callback)
  code=RedeemKit.Normalize(code)
  if code=="" then return self:fail_(callback,"empty") end
- if self.clientId=="" or not self.json then return self:fail_(callback,"closed") end
+ if self.clientId=="" or not self.json then
+  if self.simulate then return self:simulate_(code,callback) end
+  return self:fail_(callback,"closed")
+ end
  if self.busy then return self:fail_(callback,"busy") end
  local uid=self.userId()
  if not uid then return self:fail_(callback,"no_user") end
