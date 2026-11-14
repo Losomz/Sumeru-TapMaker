@@ -1,5 +1,8 @@
--- 兑换码：接 TapTap 礼包的「无服务器兑换」。游戏只把码交给 TapTap，按返回的奖品发奖；
--- 码是否有效、是否用过、每人限领、过期、库存都由 TapTap 后台判断，这里不存码、不记谁领过。
+-- 兑换码，两种来源：
+-- 1. 游戏内置码：码和奖品写在游戏配置里，本地判断，领过的记进游戏存档，同一个存档一个码只能领一次。不连网，Maker 真机能用。
+-- 2. TapTap 礼包「无服务器兑换」：码交给 TapTap 判断（有效、用过、每人限领、过期、库存），按返回的奖品发奖。
+--    Maker 真机会拦这个地址（不在网络白名单里，只能找 Maker 团队加），开通前只在电脑上能用。
+-- 先认内置码，不在表里的再走 TapTap。
 local Sha1=require("sumeru.toolkit.redeemkit.Sha1")
 
 local RedeemKit={};RedeemKit.__index=RedeemKit
@@ -14,6 +17,7 @@ RedeemKit.Messages={
  no_user="登录 TapTap 后才能兑换",
  closed="兑换暂未开放",
  busy="正在兑换，稍等",
+ invalid="兑换码不对",
  network="网络不好，稍后再试",
  other="兑换失败（%s）",
  [100001]="兑换码不对",[100016]="兑换码不对",
@@ -53,6 +57,7 @@ local function globalJson() local ok,v=pcall(function() return cjson end);return
 -- json（有 encode/decode 的编解码器，默认全局 cjson）、messages（覆盖提示）；
 -- simulate=true（桌面本地开发）：没配 clientId 时不连 TapTap，每个码第一次按成功回调、发 simulateItems，
 -- 同一个码再兑提示「已经领过了」，只用来走通发奖和提示；配了 clientId 就照常请求 TapTap。
+-- codes：游戏内置码 {[码]={{name,number},...}}，大小写不分；redeemed：返回存档里记已领内置码的表的函数（不给只记在内存里）。
 -- 测试注入：http（同运行时 http 的接口）、userId（函数）、now（秒级时间函数）、random（同 math.random）。
 function RedeemKit.new(opts)
  opts=opts or {}
@@ -70,6 +75,10 @@ function RedeemKit.new(opts)
  self.simulate=opts.simulate==true
  self.simulateItems=opts.simulateItems or {{name="钻石",number=100}}
  self.simulated={}
+ self.codes={}
+ for c,items in pairs(opts.codes or {}) do self.codes[RedeemKit.Normalize(c):lower()]=items end
+ self.redeemed=opts.redeemed
+ self.localUsed={}
  self.busy=false
  return self
 end
@@ -161,14 +170,27 @@ function RedeemKit:simulate_(code,callback)
  call(callback,true,{activityId="simulate",items=items})
 end
 
+-- 内置码：本地发奖，码记进 redeemed() 的表（游戏随后存档），同一个存档再兑就是「已经领过了」。activityId 是码本身。
+function RedeemKit:local_(key,callback)
+ local used=self.redeemed and self.redeemed() or self.localUsed
+ if used[key] then return self:fail_(callback,100025) end
+ used[key]=true
+ local items={}
+ for i,it in ipairs(self.codes[key]) do items[i]={name=it.name,number=it.number} end
+ call(callback,true,{activityId=key,items=items})
+end
+
 -- 兑换一个码。callback(true,{activityId,items={{name,number}}}) 或 callback(false,{code,message})，只回调一次。
--- 码为空、没登录、上一个还没回来、没配 clientId 时当场失败，不发请求（simulate 时没配 clientId 走本地模拟）。
+-- 内置码当场发奖、不发请求；码为空、没登录、上一个还没回来、没配 clientId 时当场失败，不发请求
+-- （没配 clientId 时：simulate 走本地模拟；配了内置码就提示「兑换码不对」，否则「兑换暂未开放」）。
 function RedeemKit:Redeem(code,callback)
  code=RedeemKit.Normalize(code)
  if code=="" then return self:fail_(callback,"empty") end
+ local key=code:lower()
+ if self.codes[key] then return self:local_(key,callback) end
  if self.clientId=="" or not self.json then
   if self.simulate then return self:simulate_(code,callback) end
-  return self:fail_(callback,"closed")
+  return self:fail_(callback,next(self.codes) and "invalid" or "closed")
  end
  if self.busy then return self:fail_(callback,"busy") end
  local uid=self.userId()

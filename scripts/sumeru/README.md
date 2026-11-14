@@ -23,7 +23,7 @@
 - [SaveKit：按结构声明合并的存档读写](toolkit/savekit/README.md)
 - [LoadKit：资源分包按需下载与后台预取](toolkit/loadkit/README.md)
 - [AdKit：激励视频、免广与次数规则 AdFree、广告奖励统一入口 AdReward、广告位配置](toolkit/adkit/README.md)
-- [RedeemKit：兑换码，接 TapTap 礼包无服务器兑换，码在 TapTap 后台管理](toolkit/redeemkit/README.md)
+- [RedeemKit：兑换码，游戏内置码（存档记领取）+ TapTap 礼包无服务器兑换（Maker 真机需白名单）](toolkit/redeemkit/README.md)
 - [PoolKit：对象池与帧槽位池（按 System 注册）](toolkit/poolkit/README.md)
 - [TickKit：更新调度、时间线倍速与暂停（按 System 注册）](toolkit/tickkit/README.md)
 
