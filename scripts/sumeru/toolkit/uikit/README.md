@@ -43,6 +43,51 @@ UIKit:Attach(app,metrics)
 
 项目需要为所有 JSON 控件注入统一外观时，可调用 `require("sumeru.toolkit.uikit.Json").SetWidgetInitializer(fn)`。回调接收 Widget，在每次加载模板时遍历执行，包含动态条目的控件；不设置时保持默认行为。业务布局仍保存在 JSON 中。
 
+## 弹窗栈
+
+弹窗的打开和关闭都经过框架，由框架维护弹窗栈。项目不要自己记一份弹窗列表。
+
+**注册**：写在 `Popup` 层，不写 `visible`：
+
+```lua
+UIKit:RegisterPanel("confirm",{shell="overlay",layer=UIKit.Layers.Popup,modal=true})
+```
+
+**接口**：
+
+| 接口 | 说明 |
+|---|---|
+| `OpenPopup(key,props)` | 压到栈顶并显示。只显示栈顶，下面的先隐藏。同一个 key 在栈里只有一份，再次打开会挪到栈顶、换新参数。返回是否打开（没注册或不是栈管理的弹窗返回 false） |
+| `ClosePopup(key)` | 关掉这个弹窗；不传 key 关栈顶。返回是否关掉了 |
+| `ClearPopups()` | 全部关掉（换场景、清档时用） |
+| `TopPopup()` | 栈顶弹窗的 key，没有弹窗时为 `nil` |
+| `HasPopup(key)` | 这个弹窗在不在栈里（不一定在栈顶） |
+| `PopupProps(key)` | 打开时传的参数，不在栈里返回 `{}`。控制器的 `Show(ctx)` 里 `ctx.pageProps` 也是它 |
+
+- 每次 `OpenPopup` 都算一次重新打开：框架销毁旧实例，重挂模板，再调 `Show`。所以先关再开同一个弹窗（比如把「全灭」换成「战报」），哪怕在同一帧里，面板也会按新参数重画。面板不用写 `Refresh` 去比对参数、补画。
+- 打开、关闭会派发 `sumeru.ui.opened` / `sumeru.ui.closed`（参数是 key），和整页一样。
+- 被盖住的弹窗露出来时，按原来的参数重新 `Show`。
+- 写了 `visible` 的 Popup 层面板照旧按 `visible` 判断显示，不进弹窗栈。老项目同步框架后不受影响。
+
+**自动弹出的弹窗用事件触发**：不是玩家点按钮打开的弹窗（结算、全灭、离线收益……），不要在 update 里看状态决定开不开。业务动作做完、状态落定之后发一个事件，在监听里打开弹窗：
+
+```lua
+-- 业务：一局打完
+arch.events:Fire("run.over",res)
+-- 监听（启动时注册一次）
+arch.events:On("run.over",app,function(res) UIKit:OpenPopup("battle",{res=res}) end)
+```
+
+- 用 `Fire` 当场派发：弹窗在动作返回前就已经进栈，后面的代码和测试可以直接读 `TopPopup()`。
+- 玩家在弹窗里点按钮（关闭、复活、选一项），直接调 `ClosePopup` / `OpenPopup`，不用绕事件。
+- 重进某个页面要补回弹窗（读档后停在待选阶段）时，监听 `sumeru.ui.opened` 判断是不是那个页面，再按当前状态发一次对应事件。
+
+**老项目迁移**：
+1. 删掉项目自己的弹窗列表。`Popup` / `ClosePopup` / `TopPopup` / `PopupProps` 这类门面方法改成转调上面的接口，清空列表改成 `ClearPopups()`。
+2. 弹窗注册删掉 `visible=栈顶判断`。
+3. 删掉 `ClosePopup(k);Popup(k,props)` 里多余的关闭；面板里为「同帧重开」写的补画逻辑也删掉。
+4. update 里按状态开关弹窗的代码，改成上面的事件写法。
+
 ## 通用提示 Toast
 
 框架内置一条通用提示。它在 `Attach` 时自动注册为面板 `sumeru-toast`，挂在 overlay 宿主的 Toast 层，所以项目里必须有 overlay 宿主。业务调用 `UIKit:ShowNotice(text,duration)` 即可，不用自己写提示面板。

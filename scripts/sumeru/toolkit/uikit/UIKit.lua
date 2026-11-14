@@ -32,7 +32,7 @@ local function copy(source,target) for k,v in pairs(source or {}) do target[k]=v
 -- 初始化宿主状态；不影响业务模拟和存档。
 local function reset()
  Kit.registry_=Registry.new(Kit.config_.panelRoot);Kit.panels_={};Kit.order_={};Kit.active_={};Kit.shells_={}
- Kit.pageKey_=false;Kit.overlayKey_=false;Kit.pageProps_={};Kit.openRevision_={}
+ Kit.pageKey_=false;Kit.overlayKey_=false;Kit.pageProps_={};Kit.openRevision_={};Kit.popups_={}
  Kit.structureDirty_=true;Kit.dataDirty_=true;Kit.metricsKey_=nil;Kit.app_=nil
  Kit.noticeList_={};Kit.noticeSeq_=0;Kit.noticeRevision_=0
  Kit.root_=nil;Kit.frame_=nil;Kit.host_=nil;Kit.phaseResolver_=nil;Kit.metrics_=nil
@@ -125,10 +125,49 @@ function Kit:SetPageVisible(key,visible)
 end
 -- 切换一个工具页面。
 function Kit:Toggle(key) if self:CurrentPage()==key then return self:Close(key) end;return self:OpenPage(key) end
+
+-- 弹窗栈：Popup 层且没写 visible 的面板由框架按栈管理，后开的盖在上面，只显示栈顶。
+-- 同一个 key 在栈里只有一份；再次打开会挪到栈顶、换新参数，并重建面板、重新 Show。
+local function stacked(def) return def~=nil and def.layer==Kit.Layers.Popup and not def.visible end
+function Kit:popupIndex_(key) for i=#self.popups_,1,-1 do if self.popups_[i].key==key then return i end end end
+-- 打开弹窗（压到栈顶）；props 在 Show(ctx) 的 ctx.pageProps 和 PopupProps(key) 里读到。
+function Kit:OpenPopup(key,props)
+ local def=self.panels_[key]
+ if not stacked(def) then return false end
+ local i=self:popupIndex_(key);if i then table.remove(self.popups_,i) end
+ self.popups_[#self.popups_+1]={key=key,props=props or {}}
+ self.openRevision_[key]=(self.openRevision_[key] or 0)+1
+ self:MarkStructureDirty()
+ if self.arch and self.arch.events then self.arch.events:Fire("sumeru.ui.opened",key) end
+ return true
+end
+-- 关闭弹窗；不传 key 关栈顶。返回是否关掉了。
+function Kit:ClosePopup(key)
+ local i
+ if key then i=self:popupIndex_(key) elseif #self.popups_>0 then i=#self.popups_ end
+ if not i then return false end
+ local e=table.remove(self.popups_,i)
+ self:MarkStructureDirty()
+ if self.arch and self.arch.events then self.arch.events:Fire("sumeru.ui.closed",e.key) end
+ return true
+end
+-- 关掉全部弹窗（换场景、清档时用），不逐个派发关闭事件。
+function Kit:ClearPopups() if #self.popups_>0 then self.popups_={};self:MarkStructureDirty() end end
+-- 栈顶弹窗的 key，没有弹窗时为 nil。
+function Kit:TopPopup() local e=self.popups_[#self.popups_];return e and e.key or nil end
+-- 弹窗是否在栈里（不一定在栈顶）。
+function Kit:HasPopup(key) return self:popupIndex_(key)~=nil end
+-- 读取弹窗参数，不在栈里时返回空表。
+function Kit:PopupProps(key) local i=self:popupIndex_(key);return i and self.popups_[i].props or {} end
+
 -- 返回最上方页面的业务键。
 function Kit:CurrentPage() return self.overlayKey_ or self.pageKey_ or (self.phaseResolver_ and self.phaseResolver_(self.app_)) end
--- 读取对应页面参数。
-function Kit:PageProps(key) return self.pageProps_[key or self:CurrentPage()] or {} end
+-- 读取对应页面参数；栈管理的弹窗返回弹窗参数。
+function Kit:PageProps(key)
+ key=key or self:CurrentPage()
+ if stacked(self.panels_[key]) then return self:PopupProps(key) end
+ return self.pageProps_[key] or {}
+end
 -- 标记结构需要增量同步。
 function Kit:MarkStructureDirty() self.structureDirty_=true end
 -- 标记现有控件的数据需要刷新。
@@ -151,6 +190,7 @@ function Kit:panelVisible_(def,app)
  if not self.config_.allows(def,app) then return false end
  if def.layer==self.Layers.Page then return (def.shell=="overlay" and self.overlayKey_ or self.pageKey_)==def.key end
  if def.layer==self.Layers.PhasePage then return not self.pageKey_ and self.phaseResolver_ and self.phaseResolver_(app)==def.key end
+ if stacked(def) then return self:TopPopup()==def.key end
  return not def.visible or def.visible(app,self)==true
 end
 -- 对外查询面板是否打开。
