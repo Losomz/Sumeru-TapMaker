@@ -107,9 +107,10 @@ Maker 有两种表现，看 `project.json` 里有没有 `dc_publish_sync`：
    - diff 里只有发布记录（`dcVersion`、`dcStatus`、`updated_at` 等）时，直接提交。如果它把图片改成了旧图，先和用户确认。
    - 合并时保留自己的图片地址，然后重新构建。
    - Maker 工具这时可能提示重新登录（`taptap-maker login`），这不是鉴权问题，不用登录。
-10. **不上电脑端**：`project.json` 的 `taptap_publish.app_platforms` 写 `"1"`。现有项目都是 `"1,2"`，会连电脑端一起上架，doomsday-miner 2026-11-06 上线时电脑端就是这样跟着开放的。
-    - 改完构建，点出包后用 `taptap-cli app get-app-module` 读草稿的 `platform-status`，确认只剩手机。`"1"` 只要手机是从现有的值推断的，2026-11-09 改了 doomsday-miner，还没读回确认，这一步不能省。
-    - 已上线的电脑端要等新版本上线才会消失。
+10. **电脑端上不上**：`project.json` 的 `taptap_publish.app_platforms`，`"1"` 只上手机，`"1,2"` 连电脑端一起上（Maker 新项目默认 `"1,2"`，doomsday-miner 2026-11-06 上线时电脑端就是这样跟着开放的）。
+    - 电脑端没有激励广告。要上电脑端，先按 [AdKit · 电脑版](../../../scripts/sumeru/toolkit/adkit/README.md#电脑版) 做完那几项：PC 玩家点广告会提示「因设备限制，无法观看广告，请移步手机端」，进度靠云存档带到手机。没做的游戏写 `"1"`。
+    - 改完构建，点出包后用 `taptap-cli app get-app-module` 读草稿的 `platform-status`，确认平台和各自的发布状态（手机「提供游玩」时电脑端也要一样）。
+    - 去掉电脑端：已上线的电脑端要等新版本上线才会消失。
     - 已经上线过电脑端的，只能这样从 Maker 发版去掉。在 TapTap 后台的草稿里删掉电脑端再提审，会被拒：「不能减少已发布游戏的平台设置」（422），预检查不出来。2026-11-13 old-street-forge 踩过。
     - 挂「活动与公告」时 `top_types` 不要带 `pc_inventory`。
 

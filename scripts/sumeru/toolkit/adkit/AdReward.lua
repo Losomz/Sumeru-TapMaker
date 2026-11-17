@@ -1,5 +1,6 @@
 -- 广告奖励统一入口：业务按钮只管调用 Reward(key,grant) 发奖，不判断免广、也不自己计次。
 -- 入口先查当天总上限和这个广告点的上限；免广时不播广告直接发奖，否则播激励视频，完整看完才发奖并推进免广进度。
+-- 看不了广告的设备（电脑版）提示去手机上看；已经免广的照样直接领（免广状态跟存档走，手机上攒的电脑上也能用）。
 -- 规则在 AdFree，播放在 AdKit；游戏只注入存档里的状态、提示、存档，以及播放前后的钩子（暂停、埋点广告位等）。
 ---@class SumeruAdReward
 local AdReward={};AdReward.__index=AdReward
@@ -9,6 +10,7 @@ AdReward.TEXTS={
  cap="今天的广告次数用完了，明天再来",
  limit="今天的次数用完了，明天再来",
  unavailable="广告暂不可用，请稍后重试",
+ device="因设备限制，无法观看广告，\n请移步手机端", -- 电脑版（AdKit blocked）；按逗号换行，免得「手机端」被折开
  incomplete="需完整观看广告才能获得奖励",
  failed="广告播放失败，请稍后重试",
  progress="免广进度 %d/%d",              -- 当天已看、当天目标
@@ -54,6 +56,7 @@ end
 -- 播一次激励视频：完整看完才计次、交给 onDone(outcome) 并存档；没看完或不可用只提示。
 -- AdKit 保证回调恰好一次，所以 onStart 之后 onEnd 一定会被调用。
 local function play(self,placement,onDone)
+ if self.ad:IsBlocked() then say(self,self.texts.device);return false end
  if not self.ad:CanRequest() then say(self,self.texts.unavailable);return false end
  if self.onStart then self.onStart(placement) end
  return self.ad:ShowRewardVideo(function(result)
