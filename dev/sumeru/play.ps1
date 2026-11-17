@@ -21,7 +21,8 @@ $old = Stop-OwnPreview
 if ($old) { Write-Host "已关闭上一次的预览 PID=$old" }
 
 # 运行时是 GUI 程序，Start-Process 不会多出控制台窗口；路径参数整体加引号，项目路径带空格也能用。
-$arguments = @("main.lua", "`"-tapcode_dir=$ProjectRoot`"", "-skip_login", "-p=Res", "-w", "-width=$($config.width)", "-height=$($config.height)")
+# -sumeru_dev：测试环境标识，框架 EnvKit 认它（广告跳过、测试面板等），见 scripts/sumeru/toolkit/envkit/README.md。
+$arguments = @("main.lua", "`"-tapcode_dir=$ProjectRoot`"", "-skip_login", "-sumeru_dev", "-p=Res", "-w", "-width=$($config.width)", "-height=$($config.height)")
 if ($config.orientation -eq "portrait") { $arguments += @("-portrait", "-no_rotate") }
 
 $startedAt = Get-Date

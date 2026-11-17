@@ -13,7 +13,8 @@ OUT="$ROOT/.tmp/shots";mkdir -p "$OUT"
 BAD="$(cd "$ROOT" && find scripts -name "*.ui.json" -not -path "scripts/sumeru/*" 2>/dev/null)"
 if [ -n "$BAD" ]; then echo "警告：以下 UI 布局放在 scripts/ 下，Maker 控制台看不到，连同 .meta 平移到 assets/ 下同一相对路径（见 scripts/sumeru/toolkit/uikit/MAKER_UI.md）：";echo "$BAD"|sed "s/^/  /";fi
 rm -f "$OUT/$SCENE.png" "$OUT/$SCENE.json"
-timeout 150 "$EXE" "dev/shot-$SCENE.lua" "-tapcode_dir=$ROOT" -tool_mode -nosound \
+# -sumeru_dev：测试环境标识（框架 EnvKit），截图、自检里广告直接按看完发奖。
+timeout 150 "$EXE" "dev/shot-$SCENE.lua" "-tapcode_dir=$ROOT" -sumeru_dev -tool_mode -nosound \
  "-screenshot=$OUT/$SCENE.png" "-screenshot-frame=$FRAME" -skip_login -p=Res -w "-width=$W" "-height=$H" \
  -validate "-validate-frames=$((FRAME+30))" -validate-timeout=120 -validate-spike-threshold=2000 \
  "-validate-output=$OUT/$SCENE.json" > "$OUT/$SCENE.log" 2>&1

@@ -24,7 +24,7 @@
     onChange=function() self.dirty=true end, -- 榜单读完、出错时刷新界面
    })
    ```
-   正式包不要开 `simulate`，也别按 `Platform.IsDesktopPlatform()` 开：TapTap PC 版也是桌面平台，PC 玩家会看到假榜（要按环境判断用 [EnvKit](../envkit/README.md) 的 `IsLocalDev()`）。截图场景里另建一个 `simulate=true` 的替换掉就行。
+   正式包不要开 `simulate`，也别按 `Platform.IsDesktopPlatform()` 开：TapTap PC 版也是桌面平台，PC 玩家会看到假榜（要按环境判断用 [EnvKit](../envkit/README.md) 的 `IsDev()`）。截图场景里另建一个 `simulate=true` 的替换掉就行。
 2. **分数函数**：每个榜写一个从存档算分数的函数，返回整数。分数要能稳定涨上去，比如最高层数、战力之和；不要用会来回跳的值。
    ```lua
    local function depth(p) return p.dungeon.depth end

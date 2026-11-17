@@ -4,7 +4,7 @@
 
 ```lua
 local AdKit=require("sumeru.toolkit.adkit")
-local ad=AdKit.new({sdk=sdk})   -- 本地开发自动模拟，电脑正式版自动拦下
+local ad=AdKit.new({sdk=sdk})   -- 测试环境自动跳过，电脑正式版自动拦下（见 EnvKit）
 
 if ad:CanRequest() then
     ad:ShowRewardVideo(function(result)
@@ -16,7 +16,7 @@ end
 - 只有 `result.success==true` 才发奖；`"embed manual close"`（提前关闭）也是失败。
 - 每次请求只回调一次；播放期间 `IsBusy()` 为真，重复点击直接返回 `false`。
 - 失败时日志会打印 `[AdKit] 广告未完成 msg=...`，这是宿主/SDK 的原始结果，排查先看这一行。
-- `simulate`：不调用宿主，直接按完整观看回调，只用来走通奖励链路。不传时按 `EnvKit.IsLocalDev()`（本地跑源码才开）。
+- `simulate`：不调用宿主，直接按完整观看回调，只用来走通奖励链路。不传时按 `EnvKit.Has("skipAds")`（测试环境才开），每次请求时才问，线上中途 `Env.Enable` 也立即生效。
 - `blocked`：这台设备看不了广告，请求直接失败（`msg="device blocked"`）。不传时按 `EnvKit.IsPCRelease()`。见下面「电脑版」。
 - 不要再传 `simulate=Platform.IsDesktopPlatform()`：TapTap PC 版也是桌面平台，PC 玩家会白拿奖励。老代码这么传的，`blocked` 也会先拦下。
 
@@ -83,7 +83,8 @@ TapTap PC 版没有激励广告。框架的处理：在电脑上玩正式版时�
 | 情况 | 结果 |
 | --- | --- |
 | 手机 | 照常播广告 |
-| 本地跑源码（Maker 本地预览、`play.ps1`、`shot.sh`） | 模拟，按看完发奖 |
+| 测试环境（启动参数带 `-sumeru_dev`：`play.ps1`、`shot.sh`） | 跳过，按看完发奖 |
+| Maker 自带的本地预览（加不了参数） | 当正式版：电脑上提示移步手机端 |
 | 电脑正式版，要看广告 | 不播，提示 `AdReward.TEXTS.device`，不发奖、不计次 |
 | 电脑正式版，已经免广（当天看满或长期免广） | 照常直接领。免广状态在存档里，手机上攒的电脑上也能用 |
 
@@ -91,17 +92,17 @@ TapTap PC 版没有激励广告。框架的处理：在电脑上玩正式版时�
 
 1. 建广告用 `AdKit.new({sdk=sdk})`，不传 `simulate`、`blocked`。
 2. 广告按钮都走 `AdReward` 的 `Reward` / `Watch`。自己直接调 `ad:ShowRewardVideo` 的，失败时 `result.msg==AdKit.BLOCKED` 要提示 `AdReward.TEXTS.device`。
-3. 代码里其他「桌面 = 本地开发」的判断都换成 `EnvKit.IsLocalDev()`：数据后台的调试标记、兑换码的测试账号、排行榜 `simulate` 等。搜 `IsDesktopPlatform`，剩下的只能是画面、操作上真的分手机和电脑的。
+3. 按 [EnvKit · 接入](../envkit/README.md#接入) 注册 Env、启动脚本带 `-sumeru_dev`；代码里其他「桌面 = 本地开发」的判断都换成 `EnvKit.IsDev()`：数据后台的调试标记、兑换码的测试账号、排行榜 `simulate` 等。搜 `IsDesktopPlatform`，剩下的只能是画面、操作上真的分手机和电脑的。
 4. 接上 CloudSync，玩家才能把电脑上的进度带到手机。
 5. 平台怎么开见 [发布物料 · 规则](../../../../dev/sumeru/publish/README.md#规则) 第 10 条。
 
 提示文案可以在 `AdReward.new` 时用 `texts={device="..."}` 换掉，保持一句话。
 
-自检和截图（本地跑源码默认是模拟，要手动切到电脑正式版）：
+自检和截图（测试环境默认跳过广告，要手动切到电脑正式版）：
 
 ```lua
 local Env=require("sumeru.toolkit.envkit")
-Env.Override(false)                         -- 之后新建的 AdKit 当成电脑正式版
+Env.Override(false)                         -- 之后的广告请求都当成电脑正式版
 local ads=AdReward.new({ad=AdKit.new({sdk=nil}),rules=rules,state=...,notice=function(t) said=t end})
 ads:Reward("gift",grant)                    -- 返回 false，said==AdReward.TEXTS.device，grant 没被调用
 Env.Override(nil)                           -- 恢复
@@ -123,7 +124,7 @@ Env.Override(nil)                           -- 恢复
    ```
 
    `ad_spaces`、`top_on_placements` 照抄 `get_ad_config` 的返回值，不要自己编，也不要从别的项目复制。
-3. 缺 `@runtime.ad` 时 Maker 预览仍然正常（预览走内置 FakeAd，不需要广告位），但**正式版必然提示播放失败**。所以预览和本地 simulate 都不能证明正式广告可用，发版后要手机真机验证。
+3. 缺 `@runtime.ad` 时 Maker 预览仍然正常（预览走内置 FakeAd，不需要广告位），但**正式版必然提示播放失败**。所以预览和测试环境的广告跳过都不能证明正式广告可用，发版后要手机真机验证。
 4. 广告开通状态或广告位变化后，重新 `get_ad_config` 并更新本地 `@runtime.ad`。
 
 `dev/sumeru/setup.ps1`（每次同步框架时运行）会检查：项目脚本用到广告而 `settings.json` 缺 `@runtime.ad` 时给出警告。

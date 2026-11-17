@@ -40,9 +40,9 @@
 ```lua
 local RedeemKit=require("sumeru.toolkit.redeemkit")
 local C=require("game.config.Redeem")
--- 内置码领过的记在存档 p.redeemed；本地跑源码没有 TapTap 登录，给个固定测试 ID 才能拿 TapTap 的码试兑
+-- 内置码领过的记在存档 p.redeemed；本地测试没有 TapTap 登录，给个固定测试 ID 才能拿 TapTap 的码试兑
 -- 别按 Platform.IsDesktopPlatform() 判断：PC 正式版也是桌面，会让所有 PC 玩家共用一个测试 ID（见 EnvKit）
-local dev=require("sumeru.toolkit.envkit").IsLocalDev()
+local dev=require("sumeru.toolkit.envkit").IsDev()
 local kit=RedeemKit.new({clientId=C.clientId,json=cjson,codes=C.codes,redeemed=function() return app.p.redeemed end,   -- app.p：游戏的存档数据
  userId=dev and function() return RedeemKit.UserId() or "desktop-test" end or nil})
 
