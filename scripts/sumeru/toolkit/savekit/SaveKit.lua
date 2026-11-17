@@ -13,7 +13,7 @@ local Kit={};Kit.__index=Kit
 
 -- 声明种类的私有键，不会与业务字段重名，也不会写进存档。
 local KIND={}
--- 后端按名称登记；云端后端待接入，接口与本地相同（read(key,done) / write(key,text)）。
+-- 后端按名称登记，接口为 read(key,done) / write(key,text)。云存档不是后端：本地照旧是主存档，云端多存一份，见 CloudSync。
 local BACKENDS={["local"]=LocalBackend}
 
 -- 声明数组：每个元素都按 item 的结构合并。
@@ -66,26 +66,37 @@ function Kit:init(config)
  self.lastWritten=false;self.writeFailed=false
 end
 
+-- 把存档文本解成完整结构：返回 data,isNew。文本为空、解析失败或版本不同时返回默认数据，isNew=true。
+-- 本地读档和云存档（CloudSync）都走这里，规则一致。
+function Kit:Decode(text)
+ local raw=nil
+ if type(text)=="string" then
+  local ok,decoded=pcall(self.codec.decode,text)
+  if ok and type(decoded)=="table" then raw=integers(decoded) end
+ end
+ local isNew=raw==nil or raw.version~=self.version
+ return merge(self.schema,not isNew and raw or nil),isNew
+end
+
+-- 按结构投影后编成存档文本（带版本号）；编码失败返回 nil。
+function Kit:Encode(data)
+ local root=merge(self.schema,data)
+ root.version=self.version
+ local ok,text=pcall(self.codec.encode,root)
+ if ok and type(text)=="string" then return text end
+ return nil
+end
+
 -- 读出完整结构交给 done(data,isNew)；本地后端同步回调，云端后端异步回调。
 function Kit:Load(done)
- self.backend:read(self.key,function(text)
-  local raw=nil
-  if type(text)=="string" then
-   local ok,decoded=pcall(self.codec.decode,text)
-   if ok and type(decoded)=="table" then raw=integers(decoded) end
-  end
-  local isNew=raw==nil or raw.version~=self.version
-  done(merge(self.schema,not isNew and raw or nil),isNew)
- end)
+ self.backend:read(self.key,function(text) done(self:Decode(text)) end)
 end
 
 -- 按结构投影后写出并带上版本号：业务对象上的运行字段不会进存档；内容与上次相同时不重复写，失败只打印一次日志，下一次继续尝试。
 function Kit:Save(data)
- local root=merge(self.schema,data)
- root.version=self.version
- local ok,text=pcall(self.codec.encode,root)
- if ok and type(text)=="string" and text==self.lastWritten then return true end
- local written=ok and type(text)=="string" and select(2,pcall(self.backend.write,self.backend,self.key,text))==true
+ local text=self:Encode(data)
+ if text and text==self.lastWritten then return true end
+ local written=text~=nil and select(2,pcall(self.backend.write,self.backend,self.key,text))==true
  if not written then
   if not self.writeFailed then print("[SaveKit] 存档写入失败："..self.key) end
   self.writeFailed=true;self.lastWritten=false;return false
