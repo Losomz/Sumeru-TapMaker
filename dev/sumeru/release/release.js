@@ -56,7 +56,8 @@ const cmpVer = (a, b) => {
     for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; }
     return 0;
 };
-// Maker 版本：发布页每出一次包把 project.json 的 version 末位加 1，本次就是现在的加 1。
+// Maker 版本：每构建一次，云端 project.json 的 version 末位就加 1，本次就是现在的加 1。
+// 所以被拒后改代码重建，版本号一定再加 1，要跑 renumber 整次改号。
 const bump = (v) => { const p = parseV(v); p[p.length - 1]++; return p.join("."); };
 // 公告里只写后两段：1.0.8 → v0.8。
 const noticeOf = (v) => "v" + parseV(v).slice(1).join(".");
@@ -103,6 +104,7 @@ function tap(service, op, data, o = {}) {
     }
     if (o.key) args.push("--idempotency-key", o.key);
     if (o.yes) args.push("--yes");
+    if (o.dryRun) args.push("--dry-run");
     args.push("--json");
     let last = "";
     for (let i = 0; i < (o.write ? 1 : 3); i++) {
@@ -142,6 +144,14 @@ const DEFAULTS = {
     appVersion: [],              // [{file, match}]：match 是正则，第一个括号是版本号
     test: null,                  // {entry, script, frames, timeout, must:[…]}
     post: { group: "0", pinDays: 30, mustInclude: ["交流群"] },
+    // 审核敏感词：简介里有就不过；游戏文字里有只提示，删不删由开发者定。
+    // 1.0.10 简介里一句“黄姨彩票站刮一张”被拒，换成“喜刮刮”也被拒。
+    review: {
+        words: ["彩票", "博彩", "赌博", "赌场", "下注", "刮刮乐", "老虎机", "六合彩"],
+        descMax: 300,   // 简介超过这么多字就提示精简
+        scan: ["scripts", "assets/ui"],
+        skip: ["scripts/tests", "scripts/dev", "scripts/sumeru", "scripts/sdk"],
+    },
 };
 let cfg = null;
 function loadConfig() {
@@ -151,7 +161,7 @@ function loadConfig() {
     const own = readJsonMaybe(path.join(ROOT, "dev", "release.json"));
     if (!own) stop("缺少 dev/release.json（版本号写在哪、怎么跑测试），格式见 dev/sumeru/release/README.md");
     cfg = {
-        ...DEFAULTS, ...own, post: { ...DEFAULTS.post, ...(own.post || {}) },
+        ...DEFAULTS, ...own, post: { ...DEFAULTS.post, ...(own.post || {}) }, review: { ...DEFAULTS.review, ...(own.review || {}) },
         game: tp.title || path.basename(ROOT), devId: tp.developer_id, appId: tp.app_id, platforms: tp.app_platforms,
         slug: path.basename(ROOT),
     };
@@ -196,8 +206,10 @@ function nextStep(rec) {
     if (rec.verify && (!rec.post || !rec.post.draftId)) return `已上线，更新公告还没出：写 docs/更新日志/${rec.version}/日志.md → draft → 开发者确认后 approve → finish`;
     if (!rec.post || !rec.post.draftId) return `第 2 步：写好 docs/更新日志/${rec.version}/日志.md，跑 draft`;
     if (!rec.approve || rec.approve.hash !== rec.post.hash) return `第 3 步：把公告预览 ${rec.post.previewUrl} 给开发者看，点头后跑 approve`;
+    const rj = (rec.rejected || []).slice(-1)[0];
+    if (!rec.verify && rj && !rj.handled) return `${rj.tapVersion} 被拒（${rj.reason}）：只改资料就改好本地 project.json 跑 resubmit；要改代码就改完跑 renumber，再 prepare → 构建`;
     if (!rec.check || !rec.check.ok) return "第 4–6 步：跑 prepare（写版本号、全量测试、发布前检查）";
-    if (!rec.verify) return "第 8–9 步：Maker 构建（maker_build_current_directory），构建前说“先别开发布页”；构建完请开发者在发布页点「保持状态并更新版本」，再跑 finish";
+    if (!rec.verify) return "第 8–9 步：Maker 构建（maker_build_current_directory），构建前说“先别开发布页”；构建完请开发者把发布页刷新后点「保持状态并更新版本」，再跑 finish";
     if (!rec.post.momentId || !rec.pin || !rec.pin.contentId || !rec.done) return "第 11–13 步：跑 finish";
     return "这一版发完了";
 }
@@ -223,6 +235,65 @@ function cloudStatus() {
     const st = maker(["git", "cloud-status"]);
     if (!st.ok) stop(`读不到 Maker 云端状态：${redact(JSON.stringify(st.error || st)).slice(0, 300)}`);
     return st;
+}
+
+// 商店简介：本地 project.json 里的，和 TapTap 上现在的。
+// 发布页点更新时，交给 TapTap 的是它表单里的简介。开着的旧页面会把旧简介写回去（1.0.11 因此第二次被拒），所以第 10 步要读回核对。
+const localDesc = () => (projectJson().taptap_publish || {}).description || "";
+const tapDesc = () => (((tap("app", "get-app-module", { module_id: "basic-info" }).fields || {}).description) || {}).current_value || "";
+const reviewHits = (text) => cfg.review.words.filter((w) => String(text || "").includes(w));
+const chars = (s) => [...String(s || "")].length;
+
+// 游戏文字里的审核敏感词：扫 review.scan 下的 .lua（去掉注释）和 .json，跳过 review.skip。返回 [{file, line, word}]。
+function scanGameWords() {
+    const hits = [];
+    const skip = (p) => cfg.review.skip.some((s) => p === s || p.startsWith(s + "/"));
+    // Lua 一行去掉注释：引号外的 -- 之后都不要。
+    const code = (line) => {
+        let q = null;
+        for (let i = 0; i < line.length; i++) {
+            const c = line[i];
+            if (q) { if (c === "\\") i++; else if (c === q) q = null; }
+            else if (c === '"' || c === "'") q = c;
+            else if (c === "-" && line[i + 1] === "-") return line.slice(0, i);
+        }
+        return line;
+    };
+    const walk = (dir) => {
+        const abs = path.join(ROOT, dir);
+        if (!fs.existsSync(abs) || skip(dir)) return;
+        for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+            const p = `${dir}/${e.name}`;
+            if (e.isDirectory()) { walk(p); continue; }
+            if (skip(p) || !/\.(lua|json)$/.test(e.name)) continue;
+            fs.readFileSync(path.join(ROOT, p), "utf8").split(/\r?\n/).forEach((l, i) => {
+                for (const w of reviewHits(p.endsWith(".lua") ? code(l) : l)) hits.push({ file: p, line: i + 1, word: w });
+            });
+        }
+    };
+    for (const d of cfg.review.scan) walk(d);
+    return hits;
+}
+
+// 被拒的那次：TapTap 版本最后一条 review_rejected 的时间和原因（重提的防重复键靠这个时间区分每次被拒）。
+function lastRejection(tapVersion) {
+    const logs = (tap("app", "get-app-version", { version: tapVersion }).logs || []).filter((l) => l.event === "review_rejected");
+    const l = logs[logs.length - 1];
+    return l ? { at: Number(l.updated_time), reason: l.reason || "" } : null;
+}
+// 被拒记进发布记录（同一次被拒只记一条），handled 写的是后来怎么处理的：resubmit / renumber。
+function noteRejection(rec, v, spark) {
+    const r = lastRejection(v.version) || { at: 0, reason: v.status_reason || "" };
+    rec.rejected = rec.rejected || [];
+    if (!rec.rejected.find((x) => x.tapVersion === v.version && x.rejectedAt === r.at)) {
+        rec.rejected.push({ version: rec.version, spark, tapVersion: v.version, reason: r.reason || v.status_reason || "", rejectedAt: r.at, at: fmt(now()) });
+        saveRec(rec);
+    }
+    return rec.rejected[rec.rejected.length - 1];
+}
+function markHandled(rec, how) {
+    const rj = (rec.rejected || []).slice(-1)[0];
+    if (rj && !rj.handled) rj.handled = how;
 }
 
 // 公开的游戏详情页上，主按钮写的是什么：能玩是“打开 APP 试玩”之类，没上架是“关注 / 预约”。
@@ -408,7 +479,7 @@ async function cmdApprove(argv) {
 function stepVersion(rec) {
     head("第 4 步 写版本号");
     const want = bump(projectJson().version);
-    if (rec.version !== want) stop(`云端版本号变了：现在该发 ${want}，记录里是 ${rec.version}。先跑 status 看看，必要时重新 new`);
+    if (rec.version !== want) stop(`云端版本号变了：现在该发 ${want}，记录里是 ${rec.version}。被拒后重建过就跑 renumber；不是的话先跑 status 看看`);
     if (!cfg.appVersion.length) { info("appVersion", "dev/release.json 没写 appVersion，跳过"); return; }
     const changed = [];
     for (const e of cfg.appVersion) {
@@ -534,6 +605,15 @@ async function stepCheck(rec) {
     if (olds.length) ok("公告位", `第 12 步会用新公告顶掉“${olds[0].title}”`);
     else if (cap.used < cap.limit) ok("公告位", `公告位 ${cap.used}/${cap.limit}，还有空位`);
     else bad("公告位", `公告位满了（${cap.used}/${cap.limit}），也没有旧的更新公告可换：请开发者定下线哪条`);
+    const desc = localDesc();
+    const words = reviewHits(desc);
+    if (words.length) bad("简介", `有审核敏感词：${words.join("、")}（改 project.json 的 taptap_publish.description）`);
+    else if (chars(desc) > cfg.review.descMax) info("简介", `${chars(desc)} 字，超过 ${cfg.review.descMax}：一类玩法写一行，别逐个列店名、地点（长了不好读，也更容易碰到敏感词）`);
+    else ok("简介", `${chars(desc)} 字，没有审核敏感词`);
+    const hits = scanGameWords();
+    if (hits.length) info("游戏文字", `有审核敏感词，游戏内的也会被拒，删不删由开发者定：${hits.slice(0, 4).map((h) => `${h.file}:${h.line}「${h.word}」`).join("，")}${hits.length > 4 ? ` 等 ${hits.length} 处` : ""}`);
+    else ok("游戏文字", "没有审核敏感词");
+    rec.listing = { descSha: sha(desc), chars: chars(desc), at: fmt(now()) };
     rec.check = { at: fmt(now()), ok: fails === before, commit: head0 };
     saveRec(rec);
 }
@@ -550,6 +630,7 @@ async function cmdPrepare(argv) {
     await stepCheck(rec);
     if (fails) stop("发布前检查有不过的，先处理");
     console.log(`\n  可以构建了：先跟开发者说“开始构建，先别开发布页”，再调 maker_build_current_directory。`);
+    console.log(`  构建完请开发者把发布页刷新后再点（开着的旧页面会把旧简介写回去）。`);
 }
 
 // 第 10 步：核对上线。先把发布页写的 project.json 同步下来，再看版本号、新包、TapTap 版本、详情页。
@@ -561,20 +642,29 @@ async function stepVerify(rec) {
     const pj = projectJson();
     if (cmpVer(pj.version, rec.version) < 0) { wait("Maker 版本", `还是 ${pj.version}：发布页还没出包。点了「保持状态并更新版本」后过一两分钟再跑`); return false; }
     if (pj.version === rec.version) ok("Maker 版本", rec.version);
-    else bad("Maker 版本", `已经是 ${pj.version}，比本次 ${rec.version} 还新：发布页是不是点了不止一次？`);
+    else bad("Maker 版本", `已经是 ${pj.version}，比本次 ${rec.version} 还新：被拒后重建过就跑 renumber；不是的话，发布页是不是点了不止一次？`);
     const sp = sparks();
     const fresh = sp.filter((s) => Number(s.version_code) > rec.prev.spark);
-    if (!fresh.length) wait("包", `还没有新包（最新还是 spark ${sp[0] ? sp[0].version_code : "？"}）`);
-    else {
-        ok("包", `spark ${fresh[0].version_code}（${fmt(fresh[0].updated_at * 1000)}）`);
-        if (fresh.length > 1) info("包", `这次出了 ${fresh.length} 个包（spark ${fresh.map((s) => s.version_code).reverse().join("、")}），发布页可能点了不止一次`);
-    }
+    // 没新包就是发布页还没点：TapTap 上最新那个是旧的（可能是没发的空版本、上次被拒的），不评判，只等（1.0.10 时被误判成不过）。
+    if (!fresh.length) { wait("包", `还没有新包（最新还是 spark ${sp[0] ? sp[0].version_code : "？"}）：发布页刷新后点了，过一两分钟再跑`); return false; }
+    ok("包", `spark ${fresh[0].version_code}（${fmt(fresh[0].updated_at * 1000)}）`);
+    if (fresh.length > 1) info("包", `这次出了 ${fresh.length} 个包（spark ${fresh.map((s) => s.version_code).reverse().join("、")}），发布页可能点了不止一次`);
     const vs = tapVersions();
     const v = vs[0];
     if (!v || v.version === rec.prev.tapVersion) wait("TapTap 版本", "还没有新版本");
     else if (v.status === "online") ok("TapTap 版本", `${v.version} 已上线`);
     else if (v.status === "reviewing") wait("TapTap 版本", `${v.version} 审核中：过几分钟再跑，不要在发布页重复点`);
-    else bad("TapTap 版本", `${v.version} ${v.status_label}${v.status === "rejected" ? "：被拒了，原因到开发者后台看" : ""}`);
+    else if (v.status === "rejected") {
+        const rj = noteRejection(rec, v, Number(fresh[0].version_code));
+        bad("TapTap 版本", `${v.version} 被拒：${rj.reason}`);
+        info("被拒了", "只改资料（简介等）：改好本地 project.json 跑 resubmit，用 taptap-cli 写进 TapTap 再提审，别回发布页点；要改代码：改完跑 renumber（重建版本号必 +1），再 prepare → 构建");
+    } else bad("TapTap 版本", `${v.version} ${v.status_label}`);
+    // 交给 TapTap 的简介是不是备包时本地那份（发布页开着的旧页面会写回旧简介）。
+    if (rec.listing && v && ["reviewing", "online"].includes(v.status) && v.version !== rec.prev.tapVersion) {
+        const t = tapDesc();
+        if (sha(t) === rec.listing.descSha) ok("简介", `TapTap 上是备包时本地那份（${chars(t)} 字）`);
+        else bad("简介", `TapTap 上的简介（${chars(t)} 字）不是备包时本地那份（${rec.listing.chars} 字）：发布页多半写回了旧简介。审核中可以等结果，被拒了跑 resubmit`);
+    }
     const dc = (pj.dc_publish_sync || {}).dcVersion;
     if (v && dc && dc !== v.version) info("发布页记录", `project.json 记的是 ${dc}，TapTap 最新是 ${v.version}`);
     const phase = (pj.taptap_publish || {}).release_phase;
@@ -710,6 +800,92 @@ function stepRecord(rec) {
     console.log(`  更新公告：${rec.post && rec.post.url ? rec.post.url : "没发"} · 活动与公告：${rec.pin && rec.pin.contentId ? `已换成 ${rec.notice}` : "没换"}`);
 }
 
+// 被拒后只改资料（简介等，代码不动）重提：不回发布页点（它会交表单里的旧简介），直接用 taptap-cli 改 TapTap 草稿、预检、提审。
+// 不带 --yes 只预览：简介差异、写入预演、预检结果。开发者点头后带 --yes 再跑，才写简介、提审。
+async function cmdResubmit(argv) {
+    const rec = loadRec(argv);
+    head(`被拒重提（${rec.version}）`);
+    if (rec.verify) stop(`${rec.version} 已经上线了`);
+    const v = tapVersions()[0];
+    if (!v || v.status !== "rejected") stop(`TapTap 最新版本是 ${v ? `${v.version} ${v.status_label}` : "没有"}，不在被拒状态，不用重提`);
+    const r = lastRejection(v.version) || { at: 0, reason: v.status_reason || "" };
+    info("拒审原因", r.reason || v.status_reason || "没返回");
+    const desc = localDesc();
+    const words = reviewHits(desc);
+    if (words.length) stop(`本地简介里还有审核敏感词：${words.join("、")}。先改 project.json 的 taptap_publish.description`);
+    const key = `${cfg.slug}-${rec.version}-resubmit-${r.at}`;
+    const cur = tapDesc();
+    if (cur === desc) ok("简介", `TapTap 上已经是本地这份（${chars(desc)} 字）`);
+    else {
+        const change = { changes: [{ field_id: "description", value: desc, expected: cur }] };
+        if (!argv.yes) { tap("app", "save-changes", change, { dryRun: true, key: `${key}-desc` }); ok("简介", `TapTap 上 ${chars(cur)} 字 → 本地 ${chars(desc)} 字，写入预演通过（还没写）`); }
+        else {
+            tap("app", "save-changes", change, { yes: true, write: true, key: `${key}-desc` });
+            if (tapDesc() !== desc) stop("简介写完读回不一样，停下来查");
+            ok("简介", `已写进 TapTap 并读回核对（${chars(cur)} → ${chars(desc)} 字）`);
+        }
+    }
+    const flags = (tap("app", "get-app-module", { module_id: "platform-status" }).fields) || {};
+    const dist = Object.entries(flags).filter(([k]) => k.startsWith("region_flag_")).map(([k, f]) => `${k.replace("region_flag_", "")} ${(f.value_labels || {})[String(f.current_value)] || f.current_value}`);
+    if (dist.length) info("分发状态", `${dist.join("、")}（不改）`);
+    const schedule = { kind: "immediate" };
+    const snapV = tap("app", "prepare-review-snapshot").version_id;
+    const pre = tap("app", "precheck-app-review", { release_schedule: schedule });
+    if (pre.version_id && snapV && pre.version_id !== snapV) stop("复核期间版本变了，重跑 resubmit");
+    for (const b of pre.blockers || []) bad("阻塞项", b.message || JSON.stringify(b));
+    if (fails) stop("有阻塞项，先处理");
+    ok("阻塞项", "无");
+    const st = pre.preaudit_status || (pre.preaudit_passed ? "passed" : "");
+    if (st === "passed") ok("机审", "通过");
+    else if (st === "rejected") info("机审", "没过：不挡提交，但提了多半还会被拒");
+    else info("机审", "这次没跑出结论：可以稍后重跑，也可以直接提");
+    if (!argv.yes) { console.log("\n  开发者点头后加 --yes 再跑：写简介、提审（审核通过后立即上线）"); return; }
+    const s = tap("app", "submit-app-review", { release_schedule: schedule }, { yes: true, write: true, key });
+    const after = tapVersions()[0];
+    if (!after || after.status !== "reviewing") stop(`提审后读回是 ${after ? after.status_label : "没有版本"}，提交结果 ${JSON.stringify(s).slice(0, 200)}`);
+    ok("提审", `${after.version} 审核中`);
+    markHandled(rec, "resubmit");
+    rec.listing = { descSha: sha(desc), chars: chars(desc), at: fmt(now()) };
+    rec.resubmits = [...(rec.resubmits || []), { at: fmt(now()), tapVersion: after.version, descChanged: cur !== desc }];
+    saveRec(rec);
+    info("下一步", "后台循环跑 finish（退出码 2 = 审核中），过了自动收尾");
+}
+
+// 被拒后要改代码重建：Maker 每构建一次云端 version 就 +1，重建出来必是下一号，所以整次发布改号。
+// 记录目录、版本号跟着改，appVersion 在 prepare 里写；已确认、已发的公告不动（公告号照旧）；
+// prev.spark 改成被拒那个包，第 10 步才认得出重建的新包；测试、检查清掉，prepare 重跑。
+async function cmdRenumber(argv) {
+    const rec = loadRec(argv);
+    head(`改号（${rec.version}）`);
+    if (rec.verify) stop(`${rec.version} 已经上线了，不用改号`);
+    syncCloud();
+    const pj = projectJson();
+    const to = bump(pj.version), from = rec.version;
+    if (to === from) { ok("版本号", `云端 ${pj.version}，本次还是 ${to}，不用改号`); return; }
+    if (cmpVer(to, from) < 0) stop(`云端 ${pj.version} 比记录里的 ${from} 还旧，先跑 status 查清楚`);
+    const oldDir = path.join(LOGS, from), newDir = path.join(LOGS, to);
+    if (fs.existsSync(newDir)) stop(`${rel(newDir)}/ 已经有了`);
+    if (git(["mv", rel(oldDir), rel(newDir)], { soft: true }) === null) fs.renameSync(oldDir, newDir);
+    const re = new RegExp(`(?<![\\d.])${from.replace(/\./g, "\\.")}(?![\\d.])`, "g");
+    const list = path.join(newDir, "发布清单.md");
+    if (fs.existsSync(list)) fs.writeFileSync(list, fs.readFileSync(list, "utf8").replace(re, to));
+    const readme = path.join(LOGS, "README.md");
+    if (fs.existsSync(readme)) fs.writeFileSync(readme, fs.readFileSync(readme, "utf8").split(`| [${from}](${from}/日志.md)`).join(`| [${to}](${to}/日志.md)`));
+    const sp = sparks()[0];
+    rec.version = to;
+    if (sp) rec.prev = { ...rec.prev, spark: Number(sp.version_code) };
+    rec.renumbered = [...(rec.renumbered || []), { from, to, at: fmt(now()) }];
+    markHandled(rec, "renumber");
+    delete rec.test;
+    delete rec.check;
+    saveRec(rec);
+    const paths = [rel(oldDir), rel(newDir), rel(readme)];
+    git(["add", "-A", "--", ...paths]);
+    git(["commit", "-q", "-m", `🔖 release: ${from} 被拒重建，改记 ${to}（公告 ${rec.notice} 照旧）`, "--", ...paths]);
+    ok("改号", `${from} → ${to}：记录目录、发布清单、版本表已改，提交 ${headCommit()}；公告 ${rec.notice} 不动`);
+    ok("下一步", "改好代码后 prepare → 构建 → 发布页刷新后点更新 → finish");
+}
+
 async function cmdVerify(argv) { const rec = loadRec(argv); await stepVerify(rec); }
 async function cmdTest(argv) { const rec = loadRec(argv); stepTest(rec); }
 async function cmdCheck(argv) { const rec = loadRec(argv); await stepCheck(rec); }
@@ -744,6 +920,8 @@ const COMMANDS = {
     post: [cmdPost, "单步（第 11 步）：发更新公告"],
     pin: [cmdPin, "单步（第 12 步）：换活动与公告"],
     record: [cmdRecord, "单步（第 13 步）：版本表、提交、发布报告"],
+    resubmit: [cmdResubmit, "被拒后只改资料：本地简介写进 TapTap、预检；加 --yes 才写入并提审（不回发布页点）"],
+    renumber: [cmdRenumber, "被拒后要改代码重建：版本号必 +1，整次发布改号（记录目录、清单、版本表），公告照旧"],
 };
 
 async function main() {
@@ -752,11 +930,12 @@ async function main() {
     const rest = [];
     for (let i = 0; i < args.length; i++) {
         if (args[i] === "--version") argv.version = args[++i];
+        else if (args[i] === "--yes") argv.yes = true;
         else rest.push(args[i]);
     }
     const name = rest[0];
     if (!name || !COMMANDS[name]) {
-        console.log("用法：node dev/sumeru/release/release.js <命令> [--version 1.0.N]\n");
+        console.log("用法：node dev/sumeru/release/release.js <命令> [--version 1.0.N] [--yes]\n");
         for (const [k, [, d]] of Object.entries(COMMANDS)) console.log(`  ${k.padEnd(8)} ${d}`);
         process.exitCode = name ? 1 : 0;
         return;
@@ -773,7 +952,7 @@ async function main() {
 }
 
 // 被 require 时只导出函数（自测、查字段用），直接运行才跑命令。
-module.exports = { loadConfig, loadRec, saveRec, readNotice, noticeDoc, versionTable, fillLog, bump, noticeOf, cmpVer, playable, redact, nextStep, tap };
+module.exports = { loadConfig, loadRec, saveRec, readNotice, noticeDoc, versionTable, fillLog, bump, noticeOf, cmpVer, playable, redact, nextStep, tap, scanGameWords, reviewHits };
 if (require.main === module) main().catch((e) => {
     if (e instanceof Stop) console.log(`\n  [停] ${e.message}`);
     else console.log(`\n  [出错] ${redact(e.stack || e)}`);
