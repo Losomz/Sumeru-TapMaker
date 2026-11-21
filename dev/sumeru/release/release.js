@@ -206,7 +206,7 @@ function nextStep(rec) {
     if (rec.verify && (!rec.post || !rec.post.draftId)) return `已上线，更新公告还没出：写 docs/更新日志/${rec.version}/日志.md → draft → 开发者确认后 approve → finish`;
     if (!rec.post || !rec.post.draftId) return `第 2 步：写好 docs/更新日志/${rec.version}/日志.md，跑 draft`;
     if (!rec.approve || rec.approve.hash !== rec.post.hash) return `第 3 步：把公告预览 ${rec.post.previewUrl} 给开发者看，点头后跑 approve`;
-    const rj = (rec.rejected || []).slice(-1)[0];
+    const rj = rejections(rec).slice(-1)[0];
     if (!rec.verify && rj && !rj.handled) return `${rj.tapVersion} 被拒（${rj.reason}）：只改资料就改好本地 project.json 跑 resubmit；要改代码就改完跑 renumber，再 prepare → 构建`;
     if (!rec.check || !rec.check.ok) return "第 4–6 步：跑 prepare（写版本号、全量测试、发布前检查）";
     if (!rec.verify) return "第 8–9 步：Maker 构建（maker_build_current_directory），构建前说“先别开发布页”；构建完请开发者把发布页刷新后点「保持状态并更新版本」，再跑 finish";
@@ -281,10 +281,12 @@ function lastRejection(tapVersion) {
     const l = logs[logs.length - 1];
     return l ? { at: Number(l.updated_time), reason: l.reason || "" } : null;
 }
+// 1.0.11 之前手写的记录里 rejected 是单个对象，统一当数组读。
+const rejections = (rec) => [].concat(rec.rejected || []);
 // 被拒记进发布记录（同一次被拒只记一条），handled 写的是后来怎么处理的：resubmit / renumber。
 function noteRejection(rec, v, spark) {
     const r = lastRejection(v.version) || { at: 0, reason: v.status_reason || "" };
-    rec.rejected = rec.rejected || [];
+    rec.rejected = rejections(rec);
     if (!rec.rejected.find((x) => x.tapVersion === v.version && x.rejectedAt === r.at)) {
         rec.rejected.push({ version: rec.version, spark, tapVersion: v.version, reason: r.reason || v.status_reason || "", rejectedAt: r.at, at: fmt(now()) });
         saveRec(rec);
@@ -292,7 +294,7 @@ function noteRejection(rec, v, spark) {
     return rec.rejected[rec.rejected.length - 1];
 }
 function markHandled(rec, how) {
-    const rj = (rec.rejected || []).slice(-1)[0];
+    const rj = rejections(rec).slice(-1)[0];
     if (rj && !rj.handled) rj.handled = how;
 }
 
