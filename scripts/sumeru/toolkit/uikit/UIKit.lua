@@ -8,6 +8,7 @@ local Registry=require("sumeru.toolkit.uikit.PanelRegistry")
 local Components=require("sumeru.toolkit.uikit.ComponentRegistry")
 local PanelInstance=require("sumeru.toolkit.uikit.PanelInstance")
 local Toast=require("sumeru.toolkit.uikit.toast.Toast")
+local SliceSeams=require("sumeru.toolkit.uikit.SliceSeams")
 ---@class SumeruUIKitConfig
 ---@field host fun(app:table):string
 ---@field allows fun(def:SumeruPanelDefinition,app:table):boolean
@@ -15,6 +16,7 @@ local Toast=require("sumeru.toolkit.uikit.toast.Toast")
 ---@field componentRoot string?
 ---@field shellComponents table<string,string[]>
 ---@field toast SumeruToastConfig|false|nil 内置提示的皮肤与样式覆盖；false 关闭内置提示
+---@field sliceSeams boolean|nil 九宫格接缝修正（默认开，false 不装）：切片绘制时局部关几何抗锯齿，见 SliceSeams
 
 ---@class SumeruUIKit
 ---@field active_ SumeruPanelInstance[]
@@ -39,16 +41,17 @@ local function reset()
 end
 -- 注入业务配置：host(app) 返回宿主 Shell 名，allows(def,app) 判断面板是否允许出现，
 -- panelRoot 为面板约定根路径，componentRoot 为未登记组件的查找根路径，shellComponents 为各 Shell 预加载组件，
--- toast 为内置提示的底图、文字与样式覆盖（false 关闭）。需在 RegisterPanel 之前调用，未传字段保持原值。
+-- toast 为内置提示的底图、文字与样式覆盖（false 关闭），sliceSeams=false 不装九宫格接缝修正。需在 RegisterPanel 之前调用，未传字段保持原值。
 function Kit:Configure(opts)
  copy(opts,self.config_)
  self.registry_:SetRoot(self.config_.panelRoot)
  Components:SetRoot(self.config_.componentRoot)
  self:MarkStructureDirty()
 end
--- 挂接 App 和自适应测量函数；内置提示未关闭时注册在 overlay 宿主的 Toast 层。
+-- 挂接 App 和自适应测量函数；内置提示未关闭时注册在 overlay 宿主的 Toast 层；默认装上九宫格接缝修正。
 function Kit:Attach(app,metrics)
  self.app_=app;self.metrics_=metrics
+ if self.config_.sliceSeams~=false then SliceSeams.Install() end
  if self.config_.toast~=false and not self.panels_[Toast.KEY] then
   self:RegisterPanel(Toast.KEY,{shell="overlay",owner="global",layer=self.Layers.Toast,template=Toast.TEMPLATE,controller=Toast.CONTROLLER,
    visible=function(_,kit) return kit:HasNotice() end})

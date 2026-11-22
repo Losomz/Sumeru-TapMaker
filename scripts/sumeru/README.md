@@ -2,6 +2,19 @@
 
 可复用能力和使用经验随 `sumeru/` 目录一起迁移。项目专用资源、业务规则和美术规范留在项目中。
 
+## 踩坑速查
+
+遇到引擎或 UI 库的怪现象先看这里。哪个项目踩到新坑，先想能不能做进框架、默认就处理掉（像九宫格那条，带关闭开关）；做不进的写一行到这里，同步后每个项目都能看到。项目自己的业务坑留在项目里。
+
+| 现象 | 原因 | 怎么办 |
+|---|---|---|
+| 九宫格拉伸后，沿切片线有一条细线，颜色随背后画面变 | 官方九块分开画，每块边缘抗锯齿，接合处透出背后 | **框架已处理**：`UIKit:Attach` 默认装 `SliceSeams`，不用管。详见 [九宫格内部出现细线](toolkit/uikit/README.md#九宫格内部出现细线) |
+| Label 按“字号 = 像素”估宽，总放不下 | `fontSize` 是 pt，画出来约 ×4/3 像素；`minFontSize` 只在 `UI.defaultAutoFitText` 打开时才生效 | 窄格子里按字数自己算字号：汉字算 1、数字和符号算 0.55，字号 = floor((格宽 − 2) ÷ (4/3) ÷ 字数)，再夹上下限 |
+| `left: "-40%"` 往反方向跑 | 百分比解析丢掉负号，`"-40%"` 等于 `"40%"` | 负的 left / top / margin 一律写像素 |
+| 比屏幕大几倍的滚动面板卡 | UI 库不做视口裁剪，屏幕外的也每帧画；ScrollView 每帧递归量内容大小 | 离屏子项设 `props.visibility = "hidden"`（别用 `SetVisible`，会整棵重排）；内容层定宽高时设 `overflow = "hidden"` |
+| 试玩或截图脚本整屏黑，validate 却 PASS | 脚本里 `SubscribeToEvent("Update")` 顶掉了 App 的全局 Update（同一事件只留最后一个处理函数） | 每帧逻辑用定时续帧或 TickKit，别订全局 Update |
+| `UI.Sprite{...}` 报 redundant-parameter、`SetStyle` 要字符串 | 类名 `Sprite` 跟引擎原生 UI 的 `Sprite` 撞名，LSP 认错 | 外面套一层 `UI.Panel`，挪位置、改大小走那层；构造那行 `---@diagnostic disable-next-line: redundant-parameter` |
+
 ## 事件中心
 
 `arch.events`（`framework/TypeEvent.lua`）。注册进架构的对象自带 `SendEvent`、`PostEvent`、`RegisterEvent`、`UnRegisterEvent`、`UnRegisterAllEvent`。

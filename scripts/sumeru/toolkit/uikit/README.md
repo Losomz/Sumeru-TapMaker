@@ -194,28 +194,19 @@ bubble:SetStyle({left=(screenW-w)/2})  -- 用返回的宽高定位
 
 这个结论针对已复现的内部接缝，不代表所有细线都来自九宫格，也不足以认定所有引擎版本都有同样问题。
 
-### 默认处理：全局开启，拼接局部关闭
+### 默认处理：UIKit 挂接时统一装上（SliceSeams）
 
-保留官方切片算法，在目标控件实例上包装绘制方法：
+全局抗锯齿保持开启，只在切片绘制里局部关闭。`UIKit:Attach` 默认调用 `SliceSeams.Install()`：在 `Widget` 类上包一层 `RenderSlicedImage`，保留官方切片算法，`nvgSave` → `nvgShapeAntiAlias(nvg,0)` → 原方法 → `nvgRestore`。所有 `backgroundFit="sliced"` 的控件（JSON 面板、Button、Modal、Toast 等）最后都走这个方法，子类继承而不另写，所以包一次就全盖住；整图、圆角、矢量不受影响。
+
+2026-11-22 scavenger-diary 发现所有九宫格都有这条线，原来逐个实例包装的做法改为框架统一装上。不想要时 `Configure{sliceSeams=false}`；只想修个别控件，仍可在实例上包：
 
 ```lua
 local Panel=require("urhox-libs/UI/Widgets/Panel")
-
--- 仅关闭切片接合边的抗锯齿，结束后恢复调用前的状态。
-local function renderJoinedSlices(widget,nvg,...)
- nvgSave(nvg)
- nvgShapeAntiAlias(nvg,0)
- Panel.RenderSlicedImage(widget,nvg,...)
- nvgRestore(nvg)
-end
-
--- sheet 为 JSON 创建的目标 Panel 实例。
-sheet.RenderSlicedImage=renderJoinedSlices
-sheet:SetProp("backgroundFit","sliced")
-sheet:SetProp("backgroundSlice",{20,20,20,20}) -- 上、右、下、左；按素材填写。
+local raw=Panel.RenderSlicedImage -- 装了 SliceSeams 后这里已经是包过的版本
+sheet.RenderSlicedImage=function(widget,nvg,...) nvgSave(nvg);nvgShapeAntiAlias(nvg,0);raw(widget,nvg,...);nvgRestore(nvg) end
 ```
 
-不要改只读的 `urhox-libs/` 参考副本，运行时可能加载内置的另一份。也不要为了一个接缝全局替换官方组件方法。
+不要改只读的 `urhox-libs/` 参考副本，运行时可能加载内置的另一份；补丁打在运行时 `require("urhox-libs/UI").Widget` 上。
 
 `nvgSave` / `nvgRestore` 必须成对使用；不要在结束时直接写 `nvgShapeAntiAlias(nvg,1)`，因为调用前的状态未必是开启。该开关控制几何路径边缘，不是文字抗锯齿、纹理过滤或引擎 MSAA 的总开关。局部关闭也可能使贴图外围的几何边缘更硬，应检查实际尺寸下的外轮廓。
 
