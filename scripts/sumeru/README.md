@@ -14,6 +14,7 @@
 | 比屏幕大几倍的滚动面板卡 | UI 库不做视口裁剪，屏幕外的也每帧画；ScrollView 每帧递归量内容大小 | 离屏子项设 `props.visibility = "hidden"`（别用 `SetVisible`，会整棵重排）；内容层定宽高时设 `overflow = "hidden"` |
 | 试玩或截图脚本整屏黑，validate 却 PASS | 脚本里 `SubscribeToEvent("Update")` 顶掉了 App 的全局 Update（同一事件只留最后一个处理函数） | 每帧逻辑用定时续帧或 TickKit，别订全局 Update |
 | `UI.Sprite{...}` 报 redundant-parameter、`SetStyle` 要字符串 | 类名 `Sprite` 跟引擎原生 UI 的 `Sprite` 撞名，LSP 认错 | 外面套一层 `UI.Panel`，挪位置、改大小走那层；构造那行 `---@diagnostic disable-next-line: redundant-parameter` |
+| 新版本一上线，老玩家从头开始（存档被清） | 旧 SaveKit 版本号对不上就当新档；拾荒日记 1.0.14 只加了三个字段却把版本 9 升到 10 | 现在读档永远不清档：缺的补默认值、多的丢掉，版本号只决定跑哪些 `migrate` 修补。没上线不动版本号；上线后只加字段也不用写修补。发版前用上一版的真存档跑一遍读档（见 `toolkit/savekit/README.md`“版本修补”） |
 
 ## 事件中心
 

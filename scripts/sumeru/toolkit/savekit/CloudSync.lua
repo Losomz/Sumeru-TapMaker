@@ -5,6 +5,26 @@
 -- 所有回调只认一次：超时、迟到、重复的回调丢掉。SDK 调用包在 pcall 里，出错打 [CloudSync] 日志。
 local RedeemKit=require("sumeru.toolkit.redeemkit.RedeemKit")
 
+---@class SumeruCloudSync
+---@field kit SumeruSaveKit
+---@field key string
+---@field data fun(): any 取当前整份存档数据（根节点要有 sync）
+---@field save fun()
+---@field gap number
+---@field timeout number
+---@field onConflict fun(cloudData: table, info: table)|nil
+---@field onChange fun()|nil
+---@field cloud table|nil
+---@field userId (fun(): any)|nil
+---@field now fun(): number
+---@field t number
+---@field timer number
+---@field touches integer
+---@field inflight table
+---@field state string
+---@field at number|nil
+---@field busy boolean
+---@field conflict table|nil
 local CloudSync={};CloudSync.__index=CloudSync
 
 local function log(text) print("[CloudSync] "..text) end
@@ -109,17 +129,25 @@ function CloudSync:get_(cloud,done)
  end)
 end
 
--- 云端记录解成存档：版本不同、解不开时返回 nil。
+-- 云端记录解成存档：旧版本的照 SaveKit 规则修补、补全后用；解不开、或是比代码新的版本（别的设备装了新版）时返回 nil，
+-- 本机用了会丢掉新版本的字段。
 function CloudSync:decode_(rec)
  if not rec then return nil end
- local data,isNew=self.kit:Decode(rec.text)
- if isNew then log("云端存档版本不同或解不开，不用它");return nil end
+ local data,isNew,info=self.kit:Decode(rec.text)
+ if isNew then log("云端存档解不开，不用它");return nil end
+ if info and info.newer then log("云端存档是更新的版本（"..tostring(info.from).."），本机代码是 "..self.kit.version.."，不用它");return nil end
  return data,{rev=rec.rev,device=rec.device,at=rec.at}
+end
+
+-- 云端记录的存档版本比本机代码新：本机不能覆盖它（会丢掉新版本的字段）。
+function CloudSync:newer_(rec)
+ local v=rec and self.kit:VersionOf(rec.text)
+ return v~=nil and v>self.kit.version
 end
 
 ---------------------------------------------------------------- 启动
 -- 启动时判定用哪份存档，done({use="local"|"cloud"|"conflict", data=云端数据, info={rev,device,at}})。
--- 没登录、读不到、超时、云端没有或版本不同都用本机的；本机是新档就用云端的；
+-- 没登录、读不到、超时、云端没有、解不开或是更新的版本都用本机的；本机是新档就用云端的；
 -- 云端是别的设备传的更新版本时，本机上传后没动过就用云端的，动过就是冲突（先用本机的进游戏，再让玩家选）。
 function CloudSync:Check(data,isNew,done)
  local s=self:sync_(data)
@@ -165,6 +193,7 @@ end
 
 ---------------------------------------------------------------- 上传
 -- 上传本机存档：先读云端，别的设备写过更新的版本就不覆盖，转成冲突（回调 onConflict）；force 时直接覆盖（玩家选了本机的）。
+-- 云端存档是比本机代码新的版本时，force 也不覆盖（本机是旧版本，传上去会丢字段），等本机更新。
 -- 成功后版本号加一、清掉脏标记并写一次本地。正在上传、有冲突没处理（非 force）、没登录时不做。
 function CloudSync:Push(force)
  if self.busy then return false end
@@ -177,6 +206,11 @@ function CloudSync:Push(force)
  self:get_(cloud,function(ok,rec)
   if not ok then return fail() end
   if self.data()~=data then self.busy=false;return self:set_("idle") end
+  if self:newer_(rec) then
+   self.busy=false;self:set_("idle")
+   log("云端存档是更新的版本，本机不覆盖它（先更新游戏）")
+   return
+  end
   if rec and not force and rec.device~=s.device and rec.rev>s.rev then
    local cdata,info=self:decode_(rec)
    if cdata then
