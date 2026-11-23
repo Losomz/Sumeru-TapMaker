@@ -22,6 +22,7 @@
 - Git Bash 不要用 `cmd //c 中文.cmd`（文件名会乱码），用上面的 `.sh` 入口。
 - 发布物料：本地文件（`docs/publish-materials/`）、`project.json`（`assets`，有 `dc_publish_sync` 时还有 `baseFields`）、TapTap 草稿三处要一起改，只改本地会在上线时被 Maker 改回去。两张封面在 TapTap 的 `windows-exclusive` 模块，比例是 460:215 和 2:3。物料清单、换图步骤见 [publish/README.md](publish/README.md)。
 - 同步后自动提交：同步器把 `scripts/sumeru/`、`dev/sumeru/` 和根目录一键脚本提交成一个本地提交，说明是「🔄 chore(sumeru): 同步框架到 <框架版本>」。只提交这些路径，项目自己的改动（包括已暂存的）原样留着；框架内容没变化就不提交；不推送，推送照旧走 Maker 构建。缺 `.meta` 的文件生成后要另外提交。不想自动提交时加 `-NoCommit`。
+- 框架版本对得上：框架仓库里 `scripts/sumeru/`、`dev/sumeru/`、根目录 `*.cmd` 有没提交的改动时，同步器停下并列出文件，先在框架仓库提交、推送再同步（确实要带上加 `-AllowDirty`，提交说明和 VERSION 会标“含框架未提交的改动”）。同步后项目里的 `dev/sumeru/VERSION` 写着框架的提交号、日期和说明，几个项目用的是不是同一版一看就知道。11-23 之前同步的是框架工作区、说明却写提交号，几个项目拿到的框架说不清是哪一版。
 - 框架仓库：没有时同步器从 GitHub 克隆到项目同级的 `Sumeru-TapMaker`。拉取用 HTTPS，推送地址自动设成 SSH（`git@github.com:Losomz/Sumeru-TapMaker.git`），推送不会弹 GitHub 登录窗口，前提是本机配好了 GitHub 的 SSH key。已有的仓库推送地址还是默认 HTTPS 的，同步时也会顺手改掉。
 - 发布：步骤和选项定死在 `release/release.js`，照 [release/发布清单模板.md](release/发布清单模板.md) 一步步走，不再临场翻文档决定。每个游戏在 `dev/release.json` 写 appVersion 在哪、怎么跑测试。
 - 数据后台：看板和事件词典由 [gamealgo/](gamealgo/README.md) 的固定模板生成，项目只写 `dev/gamealgo/game.json`（看板标题、mode、里程碑节点、最多 3 个额外字段），代码接 [TelemetryKit](../../scripts/sumeru/toolkit/telemetrykit/README.md)。

@@ -9,7 +9,9 @@ param(
     # 直接用本地框架同步，不更新、不询问。
     [switch]$NoUpdate,
     # 同步后不自动提交（默认把框架内容提交成一个本地提交，不推送）。
-    [switch]$NoCommit
+    [switch]$NoCommit,
+    # 框架仓库里要同步的内容有没提交的改动时也照样同步（默认停下）；提交说明和 VERSION 会标出来。
+    [switch]$AllowDirty
 )
 
 # Sumeru 模板同步器：把框架（scripts/sumeru/）、模板工具（dev/sumeru/）和根目录一键脚本同步进游戏项目，连同自身一起更新。
@@ -70,6 +72,23 @@ if ($currentPush -eq $repoUrl) {
 $Source = (Resolve-Path -LiteralPath $Source).Path
 if ($Source -eq $Project) { throw "目标项目不能是框架仓库本身" }
 
+# 框架仓库里要同步的内容有没提交的改动时停下：同步的是工作区，提交说明却写框架的提交号，两边对不上，
+# 各项目拿到的框架就说不清是哪一版（11-23 前几个项目就是这样）。先在框架仓库提交、推送再同步。
+$encoding0 = [Console]::OutputEncoding
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$dirtyFiles = @(git -C $Source status --porcelain -- scripts/sumeru dev/sumeru "*.cmd")
+[Console]::OutputEncoding = $encoding0
+$dirtyNote = ""
+if ($dirtyFiles.Count -gt 0) {
+    if (-not $AllowDirty) {
+        Write-Host "框架仓库有没提交的改动：" -ForegroundColor Yellow
+        $dirtyFiles | ForEach-Object { Write-Host "  $_" }
+        throw "先在框架仓库（$Source）提交并推送再同步；确实要带上没提交的改动，加 -AllowDirty"
+    }
+    $dirtyNote = "（含框架未提交的改动）"
+    Write-Host "注意：带上了框架仓库没提交的改动（$($dirtyFiles.Count) 个文件）" -ForegroundColor Yellow
+}
+
 # 返回目录下需要同步的文件相对路径，不含 .meta；目录不存在时为空。
 function Get-SyncFiles([string]$root) {
     if (-not (Test-Path -LiteralPath $root)) { return @() }
@@ -111,6 +130,7 @@ foreach ($dir in @("scripts\sumeru", "dev\sumeru")) {
         Copy-Synced (Join-Path $from $rel) (Join-Path $to $rel) (Join-Path $dir $rel)
     }
     foreach ($rel in @(Get-SyncFiles $to)) {
+        if ($dir -eq "dev\sumeru" -and $rel -eq "VERSION") { continue }   # 同步器自己写的框架版本
         if (-not $sourceSet.ContainsKey($rel.ToLowerInvariant())) {
             $path = Join-Path $to $rel
             Remove-Item -LiteralPath $path -Force
@@ -136,9 +156,16 @@ foreach ($file in @(Get-ChildItem -LiteralPath $Source -File -Filter *.cmd)) {
 $encoding = [Console]::OutputEncoding
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $commit = (git -C $Source log -1 --format="%h %s").Trim()
+$stamp = (git -C $Source log -1 --format="%h %ad %s" --date=short).Trim()
 [Console]::OutputEncoding = $encoding
+# 项目里记一下用的是哪一版框架（提交号、日期、说明），一眼对得上
+$versionFile = Join-Path $Project "dev\sumeru\VERSION"
+$versionText = "$stamp$dirtyNote`n"
+if (-not (Test-Path -LiteralPath $versionFile) -or [System.IO.File]::ReadAllText($versionFile) -ne $versionText) {
+    [System.IO.File]::WriteAllText($versionFile, $versionText, (New-Object System.Text.UTF8Encoding($false)))
+}
 Write-Host "项目：$Project"
-Write-Host "框架版本：$commit"
+Write-Host "框架版本：$commit$dirtyNote"
 Write-Host ("新增 {0}，更新 {1}，删除 {2}" -f $script:added.Count, $script:updated.Count, $script:removed.Count)
 $script:added + $script:updated + $script:removed | ForEach-Object { Write-Host "  $_" }
 
@@ -171,7 +198,7 @@ function Commit-Synced {
     # 提交说明写进 UTF-8 临时文件再交给 git：Windows PowerShell 直接传参或走管道都会把中文变成问号。
     $msgFile = Join-Path ([System.IO.Path]::GetTempPath()) ("sumeru-sync-" + $PID + ".txt")
     try {
-        [System.IO.File]::WriteAllText($msgFile, "🔄 chore(sumeru): 同步框架到 $commit", (New-Object System.Text.UTF8Encoding($false)))
+        [System.IO.File]::WriteAllText($msgFile, "🔄 chore(sumeru): 同步框架到 $commit$dirtyNote", (New-Object System.Text.UTF8Encoding($false)))
         git -C $Project commit -q -F $msgFile -- $paths
         $ok = $LASTEXITCODE -eq 0
     } finally {
