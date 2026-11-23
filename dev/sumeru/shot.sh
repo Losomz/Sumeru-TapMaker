@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 本地截图 + 运行时报错检查：直接用 Maker 已安装的 UrhoXRuntime 跑 scripts/dev/shot-<场景>.lua。
 # 用法：bash dev/sumeru/shot.sh home [帧数=120] [宽] [高]；宽高默认取 dev/launch.json。
+# 额外启动参数放 SHOT_ARGS（如 SHOT_ARGS="-edges=60x34" 模拟刘海 60、手势条 34，见 scripts/ui/Edges.lua）。
 # 产出：.tmp/shots/<场景>.png 与 .tmp/shots/<场景>.json（validate 报告），并打印过滤噪音后的错误。
 set -u
 export MSYS_NO_PATHCONV=1
@@ -17,7 +18,7 @@ rm -f "$OUT/$SCENE.png" "$OUT/$SCENE.json"
 timeout 150 "$EXE" "dev/shot-$SCENE.lua" "-tapcode_dir=$ROOT" -sumeru_dev -tool_mode -nosound \
  "-screenshot=$OUT/$SCENE.png" "-screenshot-frame=$FRAME" -skip_login -p=Res -w "-width=$W" "-height=$H" \
  -validate "-validate-frames=$((FRAME+30))" -validate-timeout=120 -validate-spike-threshold=2000 \
- "-validate-output=$OUT/$SCENE.json" > "$OUT/$SCENE.log" 2>&1
+ "-validate-output=$OUT/$SCENE.json" ${SHOT_ARGS:-} > "$OUT/$SCENE.log" 2>&1
 node -e '
 const fs=require("fs");const [png,json]=process.argv.slice(1);
 console.log(fs.existsSync(png)?"png: "+png+" ("+fs.statSync(png).size+" bytes)":"png: MISSING");
