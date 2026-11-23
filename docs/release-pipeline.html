@@ -127,7 +127,7 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
       <h1>发布流水线<span class="h1-sub">一张清单、十四步，每步干什么都定死</span></h1>
       <p class="subtitle">每次发包从同一份清单模板开始，从上往下做、打勾、留记录。哪一步谁做、跑什么命令、怎样才算过，全写在清单里，不再每次翻文档临场决定。你只做两件事：看稿点头，在发布页点一下。</p>
       <div class="meta">
-        <span>版本 <b>v0.4</b></span>
+        <span>版本 <b>v0.6</b></span>
         <span>日期 <b>2026-11-19</b></span>
         <span>作者 <b>losomz</b></span>
         <span>清单模板 <b><code>dev/sumeru/release/发布清单模板.md</code></b></span>
@@ -151,6 +151,8 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
             <tr><td class="nowrap">11-19</td><td>“试玩 / 已开放下载”“要不要改公开测试”“没有线上版本”反复确认</td><td>每次临场查文档、临场判断</td><td>选项定死；第 13 步按固定格式报告</td></tr>
             <tr><td class="nowrap">11-20</td><td>1.0.10 被拒：“简介、游戏内涉及刮彩票”</td><td>简介逐个列店名，一句“彩票站”碰了线</td><td>第 6 步查简介敏感词和字数</td></tr>
             <tr><td class="nowrap">11-21</td><td>改了简介重提，又因同一句被拒</td><td>开着的旧发布页点更新，把旧简介写回去了</td><td>第 9 步先刷新；只改资料走 <code>resubmit</code>，不回发布页点</td></tr>
+            <tr><td class="nowrap">11-22</td><td>1.0.13 收尾卡在第 10 步，一直等 Maker 版本变 1.0.13</td><td>以为每构建一次号就 +1，其实号出过包才涨；1.0.12 只构建没出包，这次没涨</td><td>第 1 步按包号定号；第 10 步认新包，号对不上只提示</td></tr>
+            <tr><td class="nowrap">11-23</td><td>1.0.14 上线，老玩家一打开从第 1 天开始，紧急退回 1.0.13</td><td>只加三个字段就把存档版本 9 升到 10，旧 SaveKit 版本不同就清档；流程里没有一项查存档</td><td>SaveKit 读档永不清档；第 6 步要有上一版的真存档样本，第 13 步出这一版的，测试逐份读</td></tr>
           </tbody>
         </table>
       </div>
@@ -228,7 +230,7 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
           <tbody>
             <tr><td class="nowrap">上架状态</td><td>保持“提供游玩”：安卓 4、iOS 0。发布页只点「保持状态并更新版本」，<strong>不点公开测试</strong></td><td>发布页把这两个码写成“试玩 / 已开放下载”，其实都是能直接玩</td></tr>
             <tr><td class="nowrap">平台</td><td>只上手机（<code>app_platforms = "1"</code>）</td><td>上过电脑端就去不掉（11-13 老街被拒过）</td></tr>
-            <tr><td class="nowrap">版本号</td><td>Maker 版本 = 云端 <code>project.json</code> 的 <code>version</code> + 1；公告写 <code>v0.N</code>；数据后台 <code>appVersion</code> 用同一个号</td><td>11-19 版本号混乱</td></tr>
+            <tr><td class="nowrap">版本号</td><td>本次 = 下一个包的 Maker 号：云端号出过包才 +1，没出过不涨；公告写 <code>v0.N</code>；数据后台 <code>appVersion</code> 用同一个号</td><td>11-19 版本号混乱；11-22 按“构建就 +1”算错</td></tr>
             <tr><td class="nowrap">出包</td><td>你在发布页点「保持状态并更新版本」，它出包并提审</td><td>今天验证过，两分钟上线</td></tr>
             <tr><td class="nowrap">更新公告</td><td>每次都发，官方身份，“综合”版块，标题“【更新公告】v0.N 一句话亮点”，帖尾带交流群</td><td>沿用框架 <code>publish/README.md</code></td></tr>
             <tr><td class="nowrap">活动与公告</td><td>新公告顶替上一条更新公告（详情页置顶，30 天）；意见反馈、新手教程不动</td><td>公告位和置顶位各只有 2 个</td></tr>
@@ -247,7 +249,7 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
           <thead><tr><th>命令</th><th>第几步</th><th>做什么</th><th>用到的工具</th></tr></thead>
           <tbody>
             <tr><td class="nowrap"><code>status</code></td><td>随时</td><td>版本一览：云端 / 本地 Maker 版本、代码 appVersion、TapTap 最近两个版本、最新的包、详情页按钮、下一个版本号、进行中的发布。只读</td><td>Maker 命令行、<code>taptap-cli</code>、详情页</td></tr>
-            <tr><td class="nowrap"><code>new</code></td><td>1</td><td>同步云端，本次 = 云端 <code>version</code> + 1，建目录、复制清单和公告稿模板，记下上一版的版本号、包号、TapTap 版本</td><td>Maker <code>git cloud-status / cloud-commit</code>、git</td></tr>
+            <tr><td class="nowrap"><code>new</code></td><td>1</td><td>同步云端，本次 = 下一个包的 Maker 号，建目录、复制清单和公告稿模板，记下上一版的版本号、包号、TapTap 版本</td><td>Maker <code>git cloud-status / cloud-commit</code>、git</td></tr>
             <tr><td class="nowrap"><code>draft</code></td><td>2</td><td>查稿（标题带 v0.N、没有占位、有交流群），上传配图，建 / 改 TapTap 草稿，给预览链接</td><td><code>md2draft.js</code>、<code>community-management</code></td></tr>
             <tr><td class="nowrap"><code>approve</code></td><td>3</td><td>你说可以发之后，记下确认和草稿指纹</td><td>—</td></tr>
             <tr><td class="nowrap"><code>prepare</code></td><td>4–6</td><td>一键：同步云端 → <code>version</code> 写 appVersion 并单独提交 → <code>test</code> 全量测试（结束语、失败 0、Lua 报错 0）→ <code>check</code> 发布前检查</td><td>git、本机 Runtime、<code>publish-check.ps1</code>、<code>taptap-cli</code></td></tr>
@@ -255,7 +257,8 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
             <tr><td class="nowrap">（构建）</td><td>8</td><td>用现在的 Maker 构建，不另写</td><td><code>maker_build_current_directory</code></td></tr>
             <tr><td class="nowrap"><code>finish</code></td><td>10–13</td><td>一键：<code>verify</code> 核对上线（没上线停下，退出码 2，过几分钟重跑）→ <code>post</code> 发确认过的草稿 → <code>pin</code> 下线旧更新公告、挂新的排第一条、读回 → <code>record</code> 版本表加一行、提交、出报告</td><td><code>taptap-cli</code>、git</td></tr>
             <tr><td class="nowrap"><code>resubmit</code></td><td>被拒</td><td>只改资料重提：本地简介写进 TapTap、预检；加 <code>--yes</code> 才写入并提审</td><td><code>taptap-cli app</code></td></tr>
-            <tr><td class="nowrap"><code>renumber</code></td><td>被拒</td><td>要改代码重建：版本号必 +1，记录目录、清单、版本表跟着改，公告照旧</td><td>Maker 命令行、git</td></tr>
+            <tr><td class="nowrap"><code>renumber</code></td><td>被拒</td><td>要改代码重建：被拒的包用掉了号，重建是下一号，记录目录、清单、版本表跟着改，公告照旧</td><td>Maker 命令行、git</td></tr>
+            <tr><td class="nowrap"><code>sample</code></td><td>随时</td><td>补存档样本：在某一版测过的提交上开临时 worktree，机器人玩几天，真存档收进样本文件。第 13 步自动做这一版的</td><td>git worktree、本机 Runtime</td></tr>
             <tr><td class="nowrap">（看数据）</td><td>14</td><td>数据后台按版本看来数，还是手动</td><td><code>gamealgo</code></td></tr>
           </tbody>
         </table>
@@ -330,6 +333,8 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
             <tr><td class="nowrap">v0.2</td><td class="nowrap">2026-11-19</td><td>改成“流水线模板 + 发布清单”。开发者说明：发布的工具 Claude 都可以调，要的是把发包走哪几步固定下来，不用每次看文档再决定；给一个流水线模板，加一份发布清单，比如 1 出稿子你看、2 用 CLI 发稿子、3 发包、4 提醒我点发布。改法：新增清单模板 <code>dev/sumeru/release/发布清单模板.md</code>，14 步分出稿 / 备包 / 发包 / 收尾，每步写谁做、固定命令、怎样算过、记什么；每次复制到 <code>docs/更新日志/1.0.N/发布清单.md</code> 打勾留档。出包固定为你在发布页点「保持状态并更新版本」（今天验证过），去掉命令行出包和“双击全自动”。更新公告放到上线以后发。每步对应 <code>release.ps1</code> 的一个子命令。</td><td class="nowrap">losomz（Claude 修订）</td></tr>
             <tr><td class="nowrap">v0.3</td><td class="nowrap">2026-11-19</td><td>做成一键脚本，放进框架。开发者说明：“发包流程、更新流程，甚至统计版本号，七七八八的都可以做成一键式的，因为之前有遇到版本号没更新的情况，这些都完完全全是固定流程，老是让你做你有时候就会漏掉”；“直接做到框架文件里，框架文件唯一权威，然后同步过来”。改法：新增 <code>dev/sumeru/release/release.js</code>（Node，替代原计划的 <code>release.ps1</code>），配置改为各游戏的 <code>dev/release.json</code>；新增 <code>status</code> 版本一览、<code>prepare</code>（第 4–6 步）和 <code>finish</code>（第 10–13 步）两条一键命令；第 2 步 <code>draft</code> 建草稿出预览、第 3 步 <code>approve</code> 记下确认和草稿指纹，稿子改过确认作废；进度记在 <code>发布记录.json</code>，可断点续跑；<code>md2draft.js</code> 支持配图。拿已上线的 1.0.7 实跑了核对上线、发布前检查和全量测试，写操作用 <code>--dry-run</code> 核对过。</td><td class="nowrap">losomz（Claude 修订）</td></tr>
             <tr><td class="nowrap">v0.4</td><td class="nowrap">2026-11-21</td><td>补被拒这条路。1.0.10 因简介一句“彩票站”被拒，重提时开着的旧发布页又把旧简介写回去，再拒一次。开发者说：“框架沉淀经验。以后简洁写精炼一点，太长反而不是好事”。改法：<code>check</code> 查简介敏感词（不过）、字数和游戏文字（提示）；<code>finish</code> 没新包只算等待，被拒记下原因；新增 <code>resubmit</code>（只改资料，用 <code>taptap-cli</code> 写简介、预检、加 <code>--yes</code> 提审）和 <code>renumber</code>（改代码重建，整次改号）；第 9 步写明先刷新发布页。</td><td class="nowrap">losomz（Claude 修订）</td></tr>
+            <tr><td class="nowrap">v0.5</td><td class="nowrap">2026-11-22</td><td>修定号。开发者反馈：“这次 Maker 构建没让版本号 +1，收尾卡在第 10 步，要在框架里修”。对过 spark 4–13：Maker 号跟着包走，号出过包，下次构建或出包才 +1，没出过不涨。改法：<code>new</code> / <code>prepare</code> / <code>renumber</code> 按“哪个包是哪个号”推下一个包的号，推不通就停；第 10 步认新包，Maker 号对不上只提示，并记下 <code>makerVersion</code> 给下次定号；下一个包的号已经发过时，本次接着往后排，另记包号核对。</td><td class="nowrap">losomz（Claude 修订）</td></tr>
+            <tr><td class="nowrap">v0.6</td><td class="nowrap">2026-11-23</td><td>加存档检查。1.0.14 只加了三个字段却把存档版本 9 升到 10，旧 SaveKit 版本不同就清档，老玩家一更新就从头开始，只好退回 1.0.13。开发者说：“不兼容你应该修复啊 默认的修复方式是有匹配补上的字段补字段 如果有特有的版本兼容再做特有的啊”；“上线了版本号开始加 按你前面说的 逐个版本修复，如果遇到以外情况 也走默认补全方案 不直接提交 避免遇到问题连补救措施都没有了”。改法：SaveKit 读档永不清档（见 savekit README“版本修补”）；<code>dev/release.json</code> 加 <code>save</code>；第 6 步查有没有上一版的真存档样本、存档版本号变了提示；第 13 步在测过的提交上出这一版的样本；新增 <code>sample</code>；README 写上紧急退版本的四条命令。</td><td class="nowrap">losomz（Claude 修订）</td></tr>
           </tbody>
         </table>
       </div>

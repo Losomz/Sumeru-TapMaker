@@ -56,9 +56,12 @@ const cmpVer = (a, b) => {
     for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; }
     return 0;
 };
-// Maker 版本：每构建一次，云端 project.json 的 version 末位就加 1，本次就是现在的加 1。
-// 所以被拒后改代码重建，版本号一定再加 1，要跑 renumber 整次改号。
-const bump = (v) => { const p = parseV(v); p[p.length - 1]++; return p.join("."); };
+// Maker 版本号跟着包走（2026-11-22 对过 spark 4–13，第 N 个包都是 1.0.(N−1)）：每出一个包用掉一个号；
+// 号只在要出新包时往前走——云端这个号已经出过包，下一次构建（或发布页出包）先 +1；还没出过包（只构建、没在发布页出包）就不涨。
+// 所以本次 = 下一个包的号（nextVersion），不能拿“云端号 +1”算：1.0.13 那次云端 1.0.12 只构建过、没出过包，
+// 构建没涨号，包出来还是 1.0.12，第 10 步一直等 1.0.13。被拒后重建：被拒那个包用掉了号，重建必是下一号，要跑 renumber。
+const addLast = (v, n) => { const p = parseV(v); p[p.length - 1] += n; return p.join("."); };
+const bump = (v) => addLast(v, 1);
 // 公告里只写后两段：1.0.8 → v0.8。
 const noticeOf = (v) => "v" + parseV(v).slice(1).join(".");
 
@@ -230,6 +233,37 @@ function appVersions() {
 const tapVersions = () => (tap("app", "list-versions", { page: 1, page_size: 5 }).list || []);
 const sparks = () => (tap("package-management", "list-spark-versions").list || []).sort((a, b) => Number(b.version_code) - Number(a.version_code));
 
+// 包号锚点 {spark, version, from}：哪个包是哪个号。先找最近一次核对上线记下的（第 10 步记 verify.makerVersion），
+// 没有就用测试二维码（project.json 的 test_qrcode：map_version 是包号，game_version 是那个包的号）。
+function versionAnchor() {
+    const recs = allRecs().filter((r) => r.verify && r.verify.spark && r.verify.makerVersion).sort((a, b) => b.verify.spark - a.verify.spark);
+    if (recs[0]) return { spark: Number(recs[0].verify.spark), version: recs[0].verify.makerVersion, from: `${recs[0].version} 上线时 spark ${recs[0].verify.spark}` };
+    const q = projectJson().test_qrcode || {};
+    if (q.map_version && q.game_version) return { spark: Number(q.map_version), version: q.game_version, from: `测试二维码 spark ${q.map_version}` };
+    return null;
+}
+
+// 本次定号 {version, maker, why}：maker 是下一个包的 Maker 号 = 锚点号 + 隔了几个包，只能是云端号（还没出过包）
+// 或云端号 +1（出过了），别的就是锚点不对，version 给 null、why 说清楚，别硬发。
+// version 是本次的号（目录、公告、appVersion），平常就等于 maker；比已发完的还小或撞上（1.0.13 实际出的是 Maker 1.0.12 包，
+// 下一个包又是 1.0.13），就接着已发完的往后排，第 10 步拿 maker 核对。sp 是 sparks() 的结果。
+function nextVersion(cloudV, sp) {
+    const latest = sp && sp[0] ? Number(sp[0].version_code) : 0;
+    const a = versionAnchor();
+    let maker, why;
+    if (!a) { maker = bump(cloudV); why = `没有包号锚点，按云端 ${cloudV} +1 猜（第 10 步核对上线后就有了）`; }
+    else {
+        maker = addLast(a.version, latest + 1 - a.spark);
+        if (maker !== cloudV && maker !== bump(cloudV)) return { version: null, maker, why: `按 ${a.from} 是 ${a.version} 推，下一个包该是 ${maker}，可云端是 ${cloudV}，对不上：先跑 status，查清楚再定号` };
+        why = maker === cloudV ? `云端 ${cloudV} 还没出过包，这次构建不涨号` : `云端 ${cloudV} 已经出过包（spark ${latest}），这次构建 +1`;
+    }
+    const done = allRecs().filter((r) => r.verify).map((r) => r.version).sort(cmpVer).pop();
+    if (done && cmpVer(maker, done) <= 0) return { version: bump(done), maker, why: `${why}，包号是 ${maker}；${done} 已经发过，本次记 ${bump(done)}` };
+    return { version: maker, maker, why };
+}
+// 第 10 步核对用：这次的包该是哪个 Maker 号（记录里没记 maker 的老记录，就是本次号）。
+const makerOf = (rec) => rec.maker || rec.version;
+
 // 云端工作区状态：{clean, files, head}。
 function cloudStatus() {
     const st = maker(["git", "cloud-status"]);
@@ -307,6 +341,14 @@ async function storeButton() {
         return m ? m[1].trim() : "";
     } catch (e) { return null; }
 }
+// 详情页上的简介对不对：本地简介每行取开头 14 个字去详情页里找（整行可能被转义），返回找不到的那几行开头；页面打不开返回 null。
+async function storeDescMissing(desc) {
+    try {
+        const res = await fetch(`https://www.taptap.cn/app/${cfg.appId}`, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(20000) });
+        const html = await res.text();
+        return String(desc).split("\n").map((l) => [...l.trim()].slice(0, 14).join("")).filter((l) => l && !html.includes(l));
+    } catch (e) { return null; }
+}
 const playable = (label) => /试玩|开始|下载|玩/.test(label || "") && !/预约|关注/.test(label || "");
 
 // 公告稿：读 日志.md，找出要上传的图片，查占位符和标题。
@@ -380,8 +422,9 @@ async function cmdStatus(argv) {
     if (sp[0]) console.log(`  最新的包        spark ${sp[0].version_code}（${fmt(sp[0].updated_at * 1000)}）`);
     const btn = await storeButton();
     console.log(`  详情页按钮      ${btn === null ? "读不到" : btn || "没找到"}${btn && !playable(btn) ? "（玩家现在玩不了！）" : ""}`);
-    const next = bump(cloudV);
-    console.log(`  下一个版本      ${next}（公告 ${noticeOf(next)}）`);
+    const next = nextVersion(cloudV, sp);
+    if (next.version) console.log(`  下一个版本      ${next.version}（公告 ${noticeOf(next.version)}；${next.why}）`);
+    else console.log(`  下一个版本      定不了：${next.why}`);
     const recs = allRecs();
     const open = recs.filter((r) => !r.done);
     if (open.length) for (const r of open) console.log(`  进行中的发布    ${r.version}：${nextStep(r)}`);
@@ -396,7 +439,10 @@ async function cmdNew() {
     head("第 1 步 定版本号");
     syncCloud();
     const pj = projectJson();
-    const v = bump(pj.version);
+    const sps = sparks();
+    const next = nextVersion(pj.version, sps);
+    if (!next.version) stop(next.why);
+    const v = next.version;
     if (fs.existsSync(recPath(v))) { ok("版本号", `${v} 已经开过了：docs/更新日志/${v}/`); return track(readJson(recPath(v))); }
     for (const r of allRecs()) if (!r.done) info("没收尾", `${r.version} 还没发完（${nextStep(r)}）`);
     const dir = path.join(LOGS, v);
@@ -411,14 +457,14 @@ async function cmdNew() {
         const tpl = fs.readFileSync(fs.existsSync(own) ? own : LOG_TEMPLATE, "utf8");
         fs.writeFileSync(logFile, fillLog(tpl, notice, today()));
     }
-    const sp = sparks()[0];
+    const sp = sps[0];
     const online = tapVersions().find((x) => x.status === "online");
     const rec = {
-        game: cfg.game, version: v, notice, createdAt: fmt(now()),
+        game: cfg.game, version: v, maker: next.maker, notice, createdAt: fmt(now()),
         prev: { version: pj.version, spark: sp ? Number(sp.version_code) : 0, tapVersion: online ? online.version : "" },
     };
     saveRec(rec);
-    ok("版本号", `上一版 ${pj.version} → 本次 ${v}（公告 ${notice}，数据后台 appVersion 也是 ${v}）`);
+    ok("版本号", `本次 ${v}（${next.why}；公告 ${notice}，数据后台 appVersion 也是 ${v}）`);
     ok("目录", `${rel(dir)}/：发布清单.md、日志.md（公告稿，照模板写）、发布记录.json`);
     return rec;
 }
@@ -480,8 +526,10 @@ async function cmdApprove(argv) {
 // 第 4 步：把数据后台的 appVersion 写成本次版本号，单独提交一下。
 function stepVersion(rec) {
     head("第 4 步 写版本号");
-    const want = bump(projectJson().version);
-    if (rec.version !== want) stop(`云端版本号变了：现在该发 ${want}，记录里是 ${rec.version}。被拒后重建过就跑 renumber；不是的话先跑 status 看看`);
+    const next = nextVersion(projectJson().version, sparks());
+    if (!next.version) stop(next.why);
+    if (rec.version !== next.version) stop(`本次该是 ${next.version}（${next.why}），记录里是 ${rec.version}。被拒后重建过就跑 renumber；不是的话先跑 status 看看`);
+    if (makerOf(rec) !== next.maker) { rec.maker = next.maker; saveRec(rec); }
     if (!cfg.appVersion.length) { info("appVersion", "dev/release.json 没写 appVersion，跳过"); return; }
     const changed = [];
     for (const e of cfg.appVersion) {
@@ -512,25 +560,31 @@ function runtimeExe() {
     return path.join(base, dirs[0], "UrhoXRuntime.exe");
 }
 
+// 用本机运行时跑一个 validate 测试脚本，返回日志全文。dir 是项目目录（默认本项目；存档样本在临时 worktree 里跑）。
+function runValidate(t, log, dir = ROOT) {
+    const launch = readJsonMaybe(path.join(ROOT, "dev", "launch.json")) || { width: 480, height: 853 };
+    const root = dir.replace(/\\/g, "/");
+    const args = [t.entry, `-tapcode_dir=${root}`, "-skip_login", "-p=Res", "-tool_mode", "-w",
+        `-width=${launch.width}`, `-height=${launch.height}`, "-validate", `-validate-test=${root}/scripts/${t.script}`,
+        `-validate-frames=${t.frames || 4000}`, `-validate-timeout=${t.timeout || 280}`, "-validate-spike-threshold=60000"];
+    console.log(`  跑 ${t.script}（${launch.width}×${launch.height}，最多 ${(t.timeout || 280) + 30} 秒）…`);
+    fs.mkdirSync(path.dirname(log), { recursive: true });
+    const fd = fs.openSync(log, "w");
+    cp.spawnSync(runtimeExe(), args, { cwd: dir, stdio: ["ignore", fd, fd], timeout: ((t.timeout || 280) + 30) * 1000, windowsHide: true });
+    fs.closeSync(fd);
+    return fs.readFileSync(log, "utf8");
+}
+
 // 第 5 步：全量测试。跑项目自己的测试入口，必须见到 dev/release.json 里 test.must 的每一句，且失败 0 条。
 function stepTest(rec) {
     head("第 5 步 全量测试");
     const t = cfg.test;
     if (!t) stop("dev/release.json 没写 test（测试入口、帧数、必须出现的结束语）");
-    const launch = readJsonMaybe(path.join(ROOT, "dev", "launch.json")) || { width: 480, height: 853 };
-    const root = ROOT.replace(/\\/g, "/");
     const log = path.join(TMP, "test.log");
-    const args = [t.entry, `-tapcode_dir=${root}`, "-skip_login", "-p=Res", "-tool_mode", "-w",
-        `-width=${launch.width}`, `-height=${launch.height}`, "-validate", `-validate-test=${root}/scripts/${t.script}`,
-        `-validate-frames=${t.frames || 4000}`, `-validate-timeout=${t.timeout || 280}`, "-validate-spike-threshold=60000"];
     const commit = headCommit();
     const dirty = git(["status", "--porcelain", "--", "scripts"]);
-    console.log(`  跑 ${t.script}（${launch.width}×${launch.height}，最多 ${(t.timeout || 280) + 30} 秒）…`);
     const started = now();
-    const fd = fs.openSync(log, "w");
-    cp.spawnSync(runtimeExe(), args, { cwd: ROOT, stdio: ["ignore", fd, fd], timeout: ((t.timeout || 280) + 30) * 1000, windowsHide: true });
-    fs.closeSync(fd);
-    const text = fs.readFileSync(log, "utf8");
+    const text = runValidate(t, log);
     const m = text.match(/INFO__VALIDATE_TEST__:(\w+)\|(\d+):(\d+):(\d+)/);
     const missing = (t.must || []).filter((s) => !text.includes(s));
     const le = text.match(/"lua_errors":\s*(\d+)/);   // 运行时自己的汇总；测试故意制造的报错不算
@@ -551,6 +605,80 @@ function stepTest(rec) {
     }
 }
 
+// ---------------------------------------------------------------- 存档
+// dev/release.json 的 save：file、match（存档版本号在哪个文件、怎么取）、samples（存档样本 Lua 文件）、
+//   make（生成样本的测试：entry、script、frames、timeout，out 是脚本写到项目根的存档文件名前缀）。
+// 样本文件是这里生成的 Lua 表，每个上线版本一组真存档，项目测试逐份读档（拾荒日记 T104）。读档永不清档，见 savekit README。
+
+// 上一个上线过的版本（本次之前、记录里 done 了的最新一个）。
+function prevRelease(rec) {
+    return allRecs().filter((r) => r.done && cmpVer(r.version, rec.version) < 0).pop() || null;
+}
+// 存档版本号：commit 为空读工作区，否则读那次提交里的。
+function saveVersionAt(commit) {
+    const s = cfg.save;
+    const file = path.join(ROOT, s.file);
+    const text = commit ? git(["show", `${commit}:${s.file}`], { soft: true }) : (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null);
+    const m = text && text.match(new RegExp(s.match));
+    return m ? Number(m[1]) : null;
+}
+// 样本文件里的条目：[{release, version, name, text}]。
+const SAMPLE_RE = /\{ release = "([^"]+)", version = (\d+), name = "([^"]+)", text = \[(=*)\[([\s\S]*?)\]\4\] \},?/g;
+function readSamples() {
+    const p = path.join(ROOT, cfg.save.samples);
+    if (!fs.existsSync(p)) return [];
+    return [...fs.readFileSync(p, "utf8").matchAll(SAMPLE_RE)].map((m) => ({ release: m[1], version: Number(m[2]), name: m[3], text: m[5] }));
+}
+function writeSamples(list) {
+    list.sort((a, b) => cmpVer(a.release, b.release) || a.name.localeCompare(b.name, "en", { numeric: true }));
+    const rows = list.map((e) => {
+        let eq = "=";
+        while (e.text.includes("]" + eq + "]")) eq += "=";
+        return `    { release = "${e.release}", version = ${e.version}, name = "${e.name}", text = [${eq}[${e.text}]${eq}] },`;
+    });
+    const body = ["---@diagnostic disable",
+        "-- 每个上线版本的真存档样本：dev/sumeru/release/release.js sample 生成，别手改；测试逐份读档，确认老玩家更新后存档照读。",
+        "return {", ...rows, "}", ""].join("\n");
+    fs.writeFileSync(path.join(ROOT, cfg.save.samples), body);
+}
+
+// 生成某个上线版本的存档样本：在那次发布测过的提交上开临时 worktree，跑 save.make 的脚本，收进样本文件（这一版已有的换掉）。
+// 老提交里没有生成脚本时，拿当前的脚本放进去试（接口对不上就跑不出来，要手动补）。返回样本文件路径。
+function stepSample(rec) {
+    head(`存档样本 ${rec.version}`);
+    const s = cfg.save;
+    if (!s || !s.make) { info("存档样本", "dev/release.json 没写 save.make，跳过"); return null; }
+    const commit = (rec.check && rec.check.commit) || (rec.test && rec.test.commit);
+    if (!commit) stop(`${rec.version} 的记录里没有测过的提交`);
+    const wt = path.join(os.tmpdir(), `sumeru-sample-${process.pid}`);
+    git(["worktree", "add", "-q", "--detach", wt, commit]);
+    try {
+        const script = path.join(wt, "scripts", s.make.script);
+        if (!fs.existsSync(script)) {
+            info("存档样本", `${commit} 里没有 ${s.make.script}，用现在的`);
+            fs.copyFileSync(path.join(ROOT, "scripts", s.make.script), script);
+        }
+        const log = path.join(TMP, "sample.log");
+        const text = runValidate(s.make, log, wt);
+        const files = fs.readdirSync(wt).filter((f) => f.startsWith(s.make.out) && f.endsWith(".json"));
+        if (!files.length) {
+            for (const l of text.split(/\r?\n/).filter((x) => /FAIL|stack traceback|attempt to/.test(x)).slice(0, 8)) console.log("      " + l.slice(0, 200));
+            stop(`没生成存档（日志 ${rel(log)}）`);
+        }
+        const fresh = files.map((f) => {
+            const body = fs.readFileSync(path.join(wt, f), "utf8").replace(/\0+$/, ""); // File:WriteString 末尾带一个 \0
+            let v = null;
+            try { v = JSON.parse(body).version; } catch (e) { stop(`${f} 不是 JSON`); }
+            return { release: rec.version, version: Number(v), name: f.slice(s.make.out.length, -5), text: body };
+        });
+        writeSamples([...readSamples().filter((e) => e.release !== rec.version), ...fresh]);
+        ok("存档样本", `${rec.version}（存档版本 ${fresh[0].version}，提交 ${commit}）：${fresh.map((e) => e.name).join("、")} 收进 ${s.samples}`);
+        return s.samples;
+    } finally {
+        git(["worktree", "remove", "--force", wt], { soft: true });
+    }
+}
+
 // 第 6 步：发布前检查，只读。有一项不过就停，不往下构建。
 async function stepCheck(rec) {
     head("第 6 步 发布前检查");
@@ -562,9 +690,10 @@ async function stepCheck(rec) {
     const behind = Number(git(["rev-list", "--count", "HEAD..origin/main"]));
     if (behind) bad("本地", `比云端少 ${behind} 个提交（跑 sync）`); else ok("本地", "包含云端全部提交");
     const pj = projectJson();
-    const want = bump(pj.version);
-    if (rec.version === want) ok("版本号", `云端 ${pj.version}，本次 ${rec.version}`);
-    else bad("版本号", `云端 ${pj.version}，本次应该是 ${want}，记录里是 ${rec.version}`);
+    const next = nextVersion(pj.version, sparks());
+    if (!next.version) bad("版本号", next.why);
+    else if (rec.version === next.version) ok("版本号", `本次 ${rec.version}（${next.why}）`);
+    else bad("版本号", `本次该是 ${next.version}（${next.why}），记录里是 ${rec.version}`);
     for (const a of appVersions()) {
         if (a.value === rec.version) ok("appVersion", `${a.file} = ${a.value}`);
         else bad("appVersion", `${a.file} = ${a.value || a.why}，应该是 ${rec.version}（跑 version）`);
@@ -574,6 +703,19 @@ async function stepCheck(rec) {
     else if (!rec.test.ok) bad("测试", `上次没过（${rec.test.at}），修好重跑`);
     else if (rec.test.commit !== head0) bad("测试", `测的是 ${rec.test.commit}，现在是 ${head0}，代码变过要重跑`);
     else ok("测试", `${rec.test.passed}/${rec.test.total} 全过（${rec.test.at}）`);
+    if (cfg.save) {
+        const cur = saveVersionAt(null);
+        const prev = prevRelease(rec);
+        const prevCommit = prev && ((prev.check && prev.check.commit) || (prev.test && prev.test.commit));
+        const old = prevCommit ? saveVersionAt(prevCommit) : null;
+        const have = [...new Set(readSamples().map((e) => e.release))];
+        if (cur === null) bad("存档", `${cfg.save.file} 里读不到存档版本号（${cfg.save.match}）`);
+        else if (prev && !have.includes(prev.version)) bad("存档", `${cfg.save.samples} 里没有上一版 ${prev.version} 的存档样本（跑 sample --version ${prev.version}），老玩家的档没验过不能发`);
+        else {
+            if (old !== null && old !== cur) info("存档", `存档版本 ${old} → ${cur}：只加字段不用升；升了要在修补表里写好每一步（读档永不清档，见 savekit README“版本修补”）`);
+            ok("存档", `版本 ${cur}，测试读过 ${have.join("、") || "（还没有上线版本）"} 的存档样本`);
+        }
+    }
     const n = readNotice(rec);
     if (n.problems.length) for (const p of n.problems) bad("公告稿", p);
     else if (!rec.post || !rec.post.draftId) bad("公告稿", "还没建草稿（跑 draft）");
@@ -642,15 +784,15 @@ async function stepVerify(rec) {
     const before = fails, waits = pendings;
     syncCloud();
     const pj = projectJson();
-    if (cmpVer(pj.version, rec.version) < 0) { wait("Maker 版本", `还是 ${pj.version}：发布页还没出包。点了「保持状态并更新版本」后过一两分钟再跑`); return false; }
-    if (pj.version === rec.version) ok("Maker 版本", rec.version);
-    else bad("Maker 版本", `已经是 ${pj.version}，比本次 ${rec.version} 还新：被拒后重建过就跑 renumber；不是的话，发布页是不是点了不止一次？`);
     const sp = sparks();
     const fresh = sp.filter((s) => Number(s.version_code) > rec.prev.spark);
     // 没新包就是发布页还没点：TapTap 上最新那个是旧的（可能是没发的空版本、上次被拒的），不评判，只等（1.0.10 时被误判成不过）。
     if (!fresh.length) { wait("包", `还没有新包（最新还是 spark ${sp[0] ? sp[0].version_code : "？"}）：发布页刷新后点了，过一两分钟再跑`); return false; }
     ok("包", `spark ${fresh[0].version_code}（${fmt(fresh[0].updated_at * 1000)}）`);
     if (fresh.length > 1) info("包", `这次出了 ${fresh.length} 个包（spark ${fresh.map((s) => s.version_code).reverse().join("、")}），发布页可能点了不止一次`);
+    // 包出了，云端号就是这个包的号。上线认的是包和 TapTap 版本，号对不上不拦（1.0.13 就卡在这），提示一声、记下来当下次定号的锚点
+    if (pj.version === makerOf(rec)) ok("Maker 版本", `${pj.version}（spark ${fresh[0].version_code}${pj.version === rec.version ? "" : `，本次记 ${rec.version}`}）`);
+    else info("Maker 版本", `这个包是 ${pj.version}，定号时以为是 ${makerOf(rec)}：不影响上线，公告和 appVersion 照 ${rec.version}；号记下来，下次按包号定`);
     const vs = tapVersions();
     const v = vs[0];
     if (!v || v.version === rec.prev.tapVersion) wait("TapTap 版本", "还没有新版本");
@@ -665,6 +807,15 @@ async function stepVerify(rec) {
     if (rec.listing && v && ["reviewing", "online"].includes(v.status) && v.version !== rec.prev.tapVersion) {
         const t = tapDesc();
         if (sha(t) === rec.listing.descSha) ok("简介", `TapTap 上是备包时本地那份（${chars(t)} 字）`);
+        else if (!t && v.status === "online") {
+            // 上线后 TapTap 没有可编辑的草稿，资料模块的字段全是空的（1.0.14 审核很快、核对时已上线，误报“0 字”），改看详情页上的简介
+            const desc = localDesc();
+            const miss = sha(desc) === rec.listing.descSha ? await storeDescMissing(desc) : undefined;
+            if (miss === undefined) bad("简介", "本地简介备包后改过，TapTap 已上线、读不到草稿：去详情页核对，不对就跑 resubmit");
+            else if (miss === null) info("简介", "TapTap 已上线、没有草稿读不到简介，详情页也没打开：去详情页看一眼");
+            else if (!miss.length) ok("简介", `详情页上是备包时本地那份（${rec.listing.chars} 字；已上线没有草稿，按详情页核对）`);
+            else bad("简介", `详情页上找不到本地简介的这几行：${miss.join("、")}：发布页多半写回了旧简介，跑 resubmit`);
+        }
         else bad("简介", `TapTap 上的简介（${chars(t)} 字）不是备包时本地那份（${rec.listing.chars} 字）：发布页多半写回了旧简介。审核中可以等结果，被拒了跑 resubmit`);
     }
     const dc = (pj.dc_publish_sync || {}).dcVersion;
@@ -675,7 +826,7 @@ async function stepVerify(rec) {
     if (btn !== null && playable(btn)) ok("详情页", `按钮是“${btn}”，玩家能玩`);
     else bad("详情页", `按钮是“${btn || "读不到"}”，玩家可能玩不了`);
     if (fails > before || pendings > waits) return false;
-    rec.verify = { at: fmt(now()), tapVersion: v.version, spark: Number(fresh[0].version_code), sparks: fresh.map((s) => Number(s.version_code)), commit: headCommit() };
+    rec.verify = { at: fmt(now()), tapVersion: v.version, spark: Number(fresh[0].version_code), makerVersion: pj.version, sparks: fresh.map((s) => Number(s.version_code)), commit: headCommit() };
     saveRec(rec);
     return true;
 }
@@ -791,10 +942,17 @@ function stepRecord(rec) {
         else ok("版本表", "已经有这一行");
     }
     if (!rec.done) { rec.done = { at: fmt(now()) }; saveRec(rec); }
-    const paths = [rel(path.join(LOGS, rec.version)), rel(readme)].filter((p) => fs.existsSync(path.join(ROOT, p)));
+    let samples = null;
+    if (cfg.save && cfg.save.make && !readSamples().some((e) => e.release === rec.version)) {
+        try { samples = stepSample(rec); } catch (e) {
+            if (!(e instanceof Stop)) throw e;
+            bad("存档样本", `${e.message}（之后跑 sample --version ${rec.version} 补上，下次发布前检查会挡）`);
+        }
+    }
+    const paths = [rel(path.join(LOGS, rec.version)), rel(readme), samples].filter((p) => p && fs.existsSync(path.join(ROOT, p)));
     git(["add", "--", ...paths]);
     const staged = git(["diff", "--cached", "--name-only", "--", ...paths]);
-    if (staged) { git(["commit", "-q", "-m", `🔖 release: ${rec.version}（公告 ${rec.notice}）上线`, "--", ...paths]); ok("提交", `${headCommit()}（发布清单、记录、版本表）`); }
+    if (staged) { git(["commit", "-q", "-m", `🔖 release: ${rec.version}（公告 ${rec.notice}）上线`, "--", ...paths]); ok("提交", `${headCommit()}（发布清单、记录、版本表${samples ? "、存档样本" : ""}）`); }
     else ok("提交", "没有要提交的");
     console.log(`\n✅ ${rec.game} ${rec.version} 已上线`);
     console.log(`  TapTap 版本 ${rec.verify.tapVersion}（已上线）· 主包 spark ${rec.verify.spark}`);
@@ -853,7 +1011,7 @@ async function cmdResubmit(argv) {
     info("下一步", "后台循环跑 finish（退出码 2 = 审核中），过了自动收尾");
 }
 
-// 被拒后要改代码重建：Maker 每构建一次云端 version 就 +1，重建出来必是下一号，所以整次发布改号。
+// 被拒后要改代码重建：被拒那个包已经用掉了号，重建出来必是下一号（见 nextVersion），所以整次发布改号。
 // 记录目录、版本号跟着改，appVersion 在 prepare 里写；已确认、已发的公告不动（公告号照旧）；
 // prev.spark 改成被拒那个包，第 10 步才认得出重建的新包；测试、检查清掉，prepare 重跑。
 async function cmdRenumber(argv) {
@@ -862,8 +1020,23 @@ async function cmdRenumber(argv) {
     if (rec.verify) stop(`${rec.version} 已经上线了，不用改号`);
     syncCloud();
     const pj = projectJson();
-    const to = bump(pj.version), from = rec.version;
-    if (to === from) { ok("版本号", `云端 ${pj.version}，本次还是 ${to}，不用改号`); return; }
+    const sps = sparks();
+    const next = nextVersion(pj.version, sps);
+    if (!next.version) stop(next.why);
+    const to = next.version, from = rec.version;
+    const sp = sps[0];
+    if (to === from) {
+        // 本次号本来就排在包号后面（见 nextVersion），号不用动，只换包号和起点包
+        rec.maker = next.maker;
+        if (sp) rec.prev = { ...rec.prev, spark: Number(sp.version_code) };
+        markHandled(rec, "renumber");
+        delete rec.test;
+        delete rec.check;
+        saveRec(rec);
+        ok("版本号", `本次还是 ${to}，不用改号；重建的包是 Maker ${next.maker}`);
+        ok("下一步", "改好代码后 prepare → 构建 → 发布页刷新后点更新 → finish");
+        return;
+    }
     if (cmpVer(to, from) < 0) stop(`云端 ${pj.version} 比记录里的 ${from} 还旧，先跑 status 查清楚`);
     const oldDir = path.join(LOGS, from), newDir = path.join(LOGS, to);
     if (fs.existsSync(newDir)) stop(`${rel(newDir)}/ 已经有了`);
@@ -873,8 +1046,8 @@ async function cmdRenumber(argv) {
     if (fs.existsSync(list)) fs.writeFileSync(list, fs.readFileSync(list, "utf8").replace(re, to));
     const readme = path.join(LOGS, "README.md");
     if (fs.existsSync(readme)) fs.writeFileSync(readme, fs.readFileSync(readme, "utf8").split(`| [${from}](${from}/日志.md)`).join(`| [${to}](${to}/日志.md)`));
-    const sp = sparks()[0];
     rec.version = to;
+    rec.maker = next.maker;
     if (sp) rec.prev = { ...rec.prev, spark: Number(sp.version_code) };
     rec.renumbered = [...(rec.renumbered || []), { from, to, at: fmt(now()) }];
     markHandled(rec, "renumber");
@@ -896,6 +1069,12 @@ async function cmdSync() { head("同步云端"); syncCloud(); }
 async function cmdPost(argv) { const rec = loadRec(argv); stepPost(rec); }
 async function cmdPin(argv) { const rec = loadRec(argv); stepPin(rec); }
 async function cmdRecord(argv) { const rec = loadRec(argv); stepRecord(rec); }
+async function cmdSample(argv) {
+    const rec = loadRec(argv);
+    if (!cfg.save) stop("dev/release.json 没写 save");
+    const p = stepSample(rec);
+    if (p) info("提交", `样本写进了 ${p}，看过后自己提交`);
+}
 
 // 第 10–13 步一键：核对上线 → 发公告 → 换活动与公告 → 记录提交。没上线就停在第 10 步，过几分钟重跑。
 async function cmdFinish(argv) {
@@ -923,7 +1102,8 @@ const COMMANDS = {
     pin: [cmdPin, "单步（第 12 步）：换活动与公告"],
     record: [cmdRecord, "单步（第 13 步）：版本表、提交、发布报告"],
     resubmit: [cmdResubmit, "被拒后只改资料：本地简介写进 TapTap、预检；加 --yes 才写入并提审（不回发布页点）"],
-    renumber: [cmdRenumber, "被拒后要改代码重建：版本号必 +1，整次发布改号（记录目录、清单、版本表），公告照旧"],
+    sample: [cmdSample, "补存档样本：在这一版测过的提交上让机器人玩几天，存档收进 save.samples（--version 指定哪一版；第 13 步会自动做）"],
+    renumber: [cmdRenumber, "被拒后要改代码重建：被拒的包用掉了号，重建是下一号，整次发布改号（记录目录、清单、版本表），公告照旧"],
 };
 
 async function main() {
