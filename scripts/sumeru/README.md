@@ -26,6 +26,19 @@
 - 排查时设 `arch.events.trace = true`，打印每次派发。
 - 开新局、读档时用 `arch.events:ClearQueue()` 丢掉上一局没派发的事件。
 
+## 命令中心
+
+`arch.commands`（`framework/CommandBus.lua`）。注册进架构的对象自带 `SendCommand`、`RegisterCommand`、`UnRegisterCommand`、`UnRegisterAllCommand`。
+
+事件是通知“发生了什么”，命令是请求“帮我改这个”：
+
+- `obj:RegisterCommand(key, fn)`：数据的主人登记自己接哪个命令。一个命令只能有一个接收者，重复登记当场报错。
+- `obj:SendCommand(key, ...)`：当场交给接收者执行，返回它的全部返回值（`ok`、扣了多少、丢了哪些）。没人接当场报错；接收者报错原样抛给发命令的人，不吞。
+- 用法：游戏按模块分，每个存档字段只有一个主人模块。模块之间要改别人的数据，发命令给主人；读直接读；通知用事件。模块里面照旧直接调，不走命令。
+- 命令名和事件名一样集中写成常量。最好再包一层带类型标注的发送函数，调用处有参数和返回值提示。
+- 排查时设 `arch.commands.trace = true`，打印每条命令和接收者。测试可以用 `Keys()`、`Owner(key)`、`Sent(key)` 查每个命令有没有人接、整套测试里发过没有。
+- 接收者的名字取对象的 `NAME` 字段，注册系统前给它设上，报错和打印才看得出是谁。
+
 ## 工具包文档
 
 - [UIKit：面板宿主、弹窗栈、安全区 SafeArea、内置通用提示 Toast、UI 绘制经验与九宫格接缝](toolkit/uikit/README.md)

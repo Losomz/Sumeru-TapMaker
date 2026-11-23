@@ -2,11 +2,13 @@
 local Architecture=require("sumeru.framework.Architecture")
 local Container=require("sumeru.framework.Container")
 local TypeEvent=require("sumeru.framework.TypeEvent")
+local CommandBus=require("sumeru.framework.CommandBus")
 local Bindable=require("sumeru.framework.Bindable")
 
 return {
  Architecture=Architecture,
  Container=Container,
  TypeEvent=TypeEvent,
+ CommandBus=CommandBus,
  Bindable=Bindable,
 }

@@ -1,13 +1,15 @@
--- sumeru 架构：具名单例 + IOC 容器 + 事件总线 + 能力注入。
+-- sumeru 架构：具名单例 + IOC 容器 + 事件总线 + 命令中心 + 能力注入。
 -- 对应 QFramework 的 Architecture<T>：Model（数据）/System（功能）/Utility（工具）
 -- 经容器注册解析；Inject 为任意对象补上 ICanGet*/ICanSendEvent/ICanRegisterEvent 能力。
 local Container=require("sumeru.framework.Container")
 local TypeEvent=require("sumeru.framework.TypeEvent")
+local CommandBus=require("sumeru.framework.CommandBus")
 
 ---@class SumeruArchitecture
 ---@field name string
 ---@field container SumeruContainer
 ---@field events SumeruTypeEvent
+---@field commands SumeruCommandBus 命令中心（模块之间请主人改数据）
 local Architecture={}
 Architecture.__index=Architecture
 
@@ -29,7 +31,7 @@ end
 ---@return SumeruArchitecture
 function Architecture.new(name)
  local self=setmetatable({},Architecture)
- self.name=name;self.container=Container.new(self);self.events=TypeEvent.new()
+ self.name=name;self.container=Container.new(self);self.events=TypeEvent.new();self.commands=CommandBus.new()
  return self
 end
 
@@ -76,7 +78,8 @@ function Architecture:GetUtility(key) return self.container:Get(key.."@utility")
 
 -- 能力注入：为对象挂上架构引用与 ICan* 能力方法（不覆盖已有同名方法）。
 -- 注入后可用 obj:GetModel(k) / obj:GetSystem(k) / obj:GetUtility(k) /
--- obj:SendEvent(k,...)（当场派发）/ obj:PostEvent(k,...)（入队，等 Drain）/ obj:RegisterEvent(k,fn) / obj:UnRegisterEvent(k,fn) / obj:UnRegisterAllEvent()。
+-- obj:SendEvent(k,...)（当场派发）/ obj:PostEvent(k,...)（入队，等 Drain）/ obj:RegisterEvent(k,fn) / obj:UnRegisterEvent(k,fn) / obj:UnRegisterAllEvent() /
+-- obj:SendCommand(k,...)（请数据的主人改，返回它的结果）/ obj:RegisterCommand(k,fn)（自己是主人，一个命令只能一个）/ obj:UnRegisterCommand(k) / obj:UnRegisterAllCommand()。
 function Architecture:Inject(obj)
  if type(obj)~="table" or obj.arch~=nil then return obj end
  local arch=self
@@ -89,6 +92,10 @@ function Architecture:Inject(obj)
  obj.RegisterEvent=obj.RegisterEvent or function(_,key,fn) arch.events:On(key,obj,fn) end
  obj.UnRegisterEvent=obj.UnRegisterEvent or function(_,key,fn) arch.events:Off(key,obj,fn) end
  obj.UnRegisterAllEvent=obj.UnRegisterAllEvent or function() arch.events:OffAll(obj) end
+ obj.SendCommand=obj.SendCommand or function(_,key,...) return arch.commands:Send(key,...) end
+ obj.RegisterCommand=obj.RegisterCommand or function(_,key,fn) arch.commands:Handle(key,obj,fn) end
+ obj.UnRegisterCommand=obj.UnRegisterCommand or function(_,key) arch.commands:Unhandle(key,obj) end
+ obj.UnRegisterAllCommand=obj.UnRegisterAllCommand or function() arch.commands:UnhandleAll(obj) end
  obj.GetArchitecture=obj.GetArchitecture or function() return arch end
  return obj
 end
