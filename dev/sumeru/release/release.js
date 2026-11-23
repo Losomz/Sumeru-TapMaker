@@ -207,7 +207,7 @@ function loadRec(argv) {
 // 下一步该做什么，按清单顺序。
 function nextStep(rec) {
     if (rec.verify && (!rec.post || !rec.post.draftId)) return `已上线，更新公告还没出：写 docs/更新日志/${rec.version}/日志.md → draft → 开发者确认后 approve → finish`;
-    if (!rec.post || !rec.post.draftId) return `第 2 步：写好 docs/更新日志/${rec.version}/日志.md，跑 draft`;
+    if (!rec.post || !rec.post.draftId) return `第 2 步：写好 docs/更新日志/${rec.version}/日志.md，跑 draft（不另写公告、沿用已发的就跑 reuse --from 1.0.N）`;
     if (!rec.approve || rec.approve.hash !== rec.post.hash) return `第 3 步：把公告预览 ${rec.post.previewUrl} 给开发者看，点头后跑 approve`;
     const rj = rejections(rec).slice(-1)[0];
     if (!rec.verify && rj && !rj.handled) return `${rj.tapVersion} 被拒（${rj.reason}）：只改资料就改好本地 project.json 跑 resubmit；要改代码就改完跑 renumber，再 prepare → 构建`;
@@ -473,6 +473,7 @@ async function cmdNew() {
 async function cmdDraft(argv) {
     const rec = loadRec(argv);
     head(`第 2 步 公告草稿（${rec.version}）`);
+    if (rec.post && rec.post.reusedFrom) { ok("草稿", `沿用 ${rec.post.reusedFrom} 的公告，不用建草稿`); return; }
     const n = readNotice(rec);
     if (n.problems.length) { for (const p of n.problems) bad("公告稿", p); stop("公告稿还没写好"); }
     rec.images = rec.images || {};
@@ -515,12 +516,37 @@ async function cmdDraft(argv) {
 async function cmdApprove(argv) {
     const rec = loadRec(argv);
     head(`第 3 步 开发者确认（${rec.version}）`);
+    if (rec.post && rec.post.reusedFrom) { ok("确认", `沿用 ${rec.post.reusedFrom} 的公告，开发者跑 reuse 时已经定了`); return; }
     if (!rec.post || !rec.post.draftId) stop("还没建公告草稿，先跑 draft");
     const n = readNotice(rec);
     if (n.problems.length || noticeDoc(rec, n).hash !== rec.post.hash) stop("日志.md 在建草稿之后改过：先重跑 draft，把新预览给开发者看");
     rec.approve = { at: fmt(now()), hash: rec.post.hash };
     saveRec(rec);
     ok("确认", `开发者已确认公告预览（${rec.post.title}），上线后第 11 步照这份发`);
+}
+
+// 第 2–3 步的另一条路：这一版不另写公告，沿用已发的更新公告（修复版、紧急重发）。开发者说沿用哪一版才跑。
+// 不建草稿、不发帖；第 12 步认得出已经挂着的那条，没挂着就重新挂它；版本表这一行链到那条帖子。
+async function cmdReuse(argv) {
+    const rec = loadRec(argv);
+    const from = argv.from || (prevRelease(rec) || {}).version;
+    head(`沿用公告（${rec.version}）`);
+    if (!from || !fs.existsSync(recPath(from))) stop("沿用哪一版：--from 1.0.N（那一版的更新公告得发过）");
+    const src = readJson(recPath(from));
+    if (!src.post || !src.post.momentId) stop(`${from} 的更新公告没发过，没法沿用`);
+    if (rec.post && rec.post.momentId && !rec.post.reusedFrom) stop(`本次已经发过自己的公告（${rec.post.url}），不用沿用`);
+    if (rec.post && rec.post.draftId && !rec.post.reusedFrom) info("草稿", `本次建过的草稿不发了，留在草稿箱：${rec.post.previewUrl}`);
+    const origin = src.post.reusedFrom || from;
+    rec.post = { ...src.post, reusedFrom: origin };
+    if (argv.note) rec.post.note = argv.note;
+    rec.approve = { at: fmt(now()), hash: rec.post.hash, reused: true };
+    saveRec(rec);
+    const file = path.join(LOGS, rec.version, "日志.md");
+    const lines = [`# ${rec.version}：沿用 ${origin} 的更新公告`, "",
+        `这一版没有单独的公告，沿用 [${origin}](../${origin}/日志.md) 的“${rec.post.title}”：${rec.post.url}`];
+    if (rec.post.note) lines.push("", rec.post.note);
+    fs.writeFileSync(file, lines.join("\n") + "\n");
+    ok("公告", `沿用 ${origin} 的“${rec.post.title}”，不建草稿、不发帖；${rel(file)} 写成了指向它的说明`);
 }
 
 // 第 4 步：把数据后台的 appVersion 写成本次版本号，单独提交一下。
@@ -716,12 +742,15 @@ async function stepCheck(rec) {
             ok("存档", `版本 ${cur}，测试读过 ${have.join("、") || "（还没有上线版本）"} 的存档样本`);
         }
     }
-    const n = readNotice(rec);
-    if (n.problems.length) for (const p of n.problems) bad("公告稿", p);
-    else if (!rec.post || !rec.post.draftId) bad("公告稿", "还没建草稿（跑 draft）");
-    else if (noticeDoc(rec, n).hash !== rec.post.hash) bad("公告稿", "日志.md 在建草稿之后改过（重跑 draft，再请开发者确认）");
-    else if (!rec.approve || rec.approve.hash !== rec.post.hash) bad("公告稿", `开发者还没确认预览：${rec.post.previewUrl}`);
-    else ok("公告稿", `已确认：${rec.post.title}`);
+    if (rec.post && rec.post.reusedFrom) ok("公告稿", `沿用 ${rec.post.reusedFrom} 的：${rec.post.title}`);
+    else {
+        const n = readNotice(rec);
+        if (n.problems.length) for (const p of n.problems) bad("公告稿", p);
+        else if (!rec.post || !rec.post.draftId) bad("公告稿", "还没建草稿（跑 draft，或者沿用已发的跑 reuse --from 1.0.N）");
+        else if (noticeDoc(rec, n).hash !== rec.post.hash) bad("公告稿", "日志.md 在建草稿之后改过（重跑 draft，再请开发者确认）");
+        else if (!rec.approve || rec.approve.hash !== rec.post.hash) bad("公告稿", `开发者还没确认预览：${rec.post.previewUrl}`);
+        else ok("公告稿", `已确认：${rec.post.title}`);
+    }
     const vs = tapVersions();
     const busy = vs.find((v) => ["reviewing", "scheduled"].includes(v.status));
     if (busy) bad("TapTap 版本", `${busy.version} ${busy.status_label}：等它结束再发，别撤`);
@@ -834,7 +863,7 @@ async function stepVerify(rec) {
 // 第 11 步：发更新公告。只发第 3 步确认过、之后没改过的那份草稿；版本没上线不发。
 function stepPost(rec) {
     head("第 11 步 发更新公告");
-    if (rec.post && rec.post.momentId) { ok("更新公告", `已经发过：${rec.post.url}`); return; }
+    if (rec.post && rec.post.momentId) { ok("更新公告", rec.post.reusedFrom ? `沿用 ${rec.post.reusedFrom} 的：${rec.post.url}` : `已经发过：${rec.post.url}`); return; }
     if (!rec.verify) stop("版本还没核对上线，不发公告");
     if (!rec.post || !rec.post.draftId) stop("还没建公告草稿（draft）");
     if (!rec.approve || rec.approve.hash !== rec.post.hash) stop("开发者还没确认这份预览，或确认后稿子又改过：先 draft，再请开发者确认、approve");
@@ -934,7 +963,9 @@ function stepRecord(rec) {
     head("第 13 步 记录、提交");
     if (!rec.verify) stop("还没核对上线");
     const readme = path.join(LOGS, "README.md");
-    const highlight = (rec.post && rec.post.title ? rec.post.title : "").replace(/^【更新公告】\S+\s*/, "");
+    const reused = rec.post && rec.post.reusedFrom;
+    const highlight = reused ? (rec.post.note ? `${rec.post.note}（沿用 ${reused} 的公告）` : `沿用 ${reused} 的公告`)
+        : (rec.post && rec.post.title ? rec.post.title : "").replace(/^【更新公告】\S+\s*/, "");
     if (fs.existsSync(readme)) {
         const before = fs.readFileSync(readme, "utf8");
         const after = versionTable(before, rec, highlight);
@@ -952,12 +983,12 @@ function stepRecord(rec) {
     const paths = [rel(path.join(LOGS, rec.version)), rel(readme), samples].filter((p) => p && fs.existsSync(path.join(ROOT, p)));
     git(["add", "--", ...paths]);
     const staged = git(["diff", "--cached", "--name-only", "--", ...paths]);
-    if (staged) { git(["commit", "-q", "-m", `🔖 release: ${rec.version}（公告 ${rec.notice}）上线`, "--", ...paths]); ok("提交", `${headCommit()}（发布清单、记录、版本表${samples ? "、存档样本" : ""}）`); }
+    if (staged) { git(["commit", "-q", "-m", `🔖 release: ${rec.version}（${reused ? `沿用 ${reused} 公告` : `公告 ${rec.notice}`}）上线`, "--", ...paths]); ok("提交", `${headCommit()}（发布清单、记录、版本表${samples ? "、存档样本" : ""}）`); }
     else ok("提交", "没有要提交的");
     console.log(`\n✅ ${rec.game} ${rec.version} 已上线`);
     console.log(`  TapTap 版本 ${rec.verify.tapVersion}（已上线）· 主包 spark ${rec.verify.spark}`);
     console.log(`  安卓 / iOS：玩家能玩 · 电脑端：未上架`);
-    console.log(`  更新公告：${rec.post && rec.post.url ? rec.post.url : "没发"} · 活动与公告：${rec.pin && rec.pin.contentId ? `已换成 ${rec.notice}` : "没换"}`);
+    console.log(`  更新公告：${rec.post && rec.post.url ? rec.post.url : "没发"} · 活动与公告：${rec.pin && rec.pin.contentId ? (reused ? `照旧挂 ${reused} 的` : `已换成 ${rec.notice}`) : "没换"}`);
 }
 
 // 被拒后只改资料（简介等，代码不动）重提：不回发布页点（它会交表单里的旧简介），直接用 taptap-cli 改 TapTap 草稿、预检、提审。
@@ -1091,6 +1122,7 @@ const COMMANDS = {
     new: [cmdNew, "第 1 步：同步云端、算出本次版本号，建 docs/更新日志/<版本>/（发布清单、公告稿、发布记录）"],
     draft: [cmdDraft, "第 2 步：公告稿写好后，上传配图、在 TapTap 建好草稿，给出预览链接"],
     approve: [cmdApprove, "第 3 步：开发者看过预览说可以发之后，记下确认"],
+    reuse: [cmdReuse, "第 2–3 步的另一条路：不另写公告，沿用已发的（--from 1.0.N，默认上一版；--note 写这版改了什么，进版本表）"],
     prepare: [cmdPrepare, "第 4–6 步一键：同步云端 → 写 appVersion → 全量测试 → 发布前检查"],
     finish: [cmdFinish, "第 10–13 步一键：核对上线 → 发公告 → 换活动与公告 → 记录提交、发布报告"],
     sync: [cmdSync, "单步：提交发布页写在云端的 project.json，合并云端提交"],
@@ -1113,11 +1145,13 @@ async function main() {
     for (let i = 0; i < args.length; i++) {
         if (args[i] === "--version") argv.version = args[++i];
         else if (args[i] === "--yes") argv.yes = true;
+        else if (args[i] === "--from") argv.from = args[++i];
+        else if (args[i] === "--note") argv.note = args[++i];
         else rest.push(args[i]);
     }
     const name = rest[0];
     if (!name || !COMMANDS[name]) {
-        console.log("用法：node dev/sumeru/release/release.js <命令> [--version 1.0.N] [--yes]\n");
+        console.log("用法：node dev/sumeru/release/release.js <命令> [--version 1.0.N] [--yes] [--from 1.0.N] [--note 说明]\n");
         for (const [k, [, d]] of Object.entries(COMMANDS)) console.log(`  ${k.padEnd(8)} ${d}`);
         process.exitCode = name ? 1 : 0;
         return;

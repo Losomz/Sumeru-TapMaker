@@ -127,7 +127,7 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
       <h1>发布流水线<span class="h1-sub">一张清单、十四步，每步干什么都定死</span></h1>
       <p class="subtitle">每次发包从同一份清单模板开始，从上往下做、打勾、留记录。哪一步谁做、跑什么命令、怎样才算过，全写在清单里，不再每次翻文档临场决定。你只做两件事：看稿点头，在发布页点一下。</p>
       <div class="meta">
-        <span>版本 <b>v0.6</b></span>
+        <span>版本 <b>v0.7</b></span>
         <span>日期 <b>2026-11-19</b></span>
         <span>作者 <b>losomz</b></span>
         <span>清单模板 <b><code>dev/sumeru/release/发布清单模板.md</code></b></span>
@@ -251,6 +251,7 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
             <tr><td class="nowrap"><code>status</code></td><td>随时</td><td>版本一览：云端 / 本地 Maker 版本、代码 appVersion、TapTap 最近两个版本、最新的包、详情页按钮、下一个版本号、进行中的发布。只读</td><td>Maker 命令行、<code>taptap-cli</code>、详情页</td></tr>
             <tr><td class="nowrap"><code>new</code></td><td>1</td><td>同步云端，本次 = 下一个包的 Maker 号，建目录、复制清单和公告稿模板，记下上一版的版本号、包号、TapTap 版本</td><td>Maker <code>git cloud-status / cloud-commit</code>、git</td></tr>
             <tr><td class="nowrap"><code>draft</code></td><td>2</td><td>查稿（标题带 v0.N、没有占位、有交流群），上传配图，建 / 改 TapTap 草稿，给预览链接</td><td><code>md2draft.js</code>、<code>community-management</code></td></tr>
+            <tr><td class="nowrap"><code>reuse</code></td><td>2–3</td><td>开发者说不另写公告时：沿用已发的更新公告（<code>--from</code> 哪一版，<code>--note</code> 这版改了什么），不建草稿、不发帖，第 12 步照旧挂着那条</td><td>—</td></tr>
             <tr><td class="nowrap"><code>approve</code></td><td>3</td><td>你说可以发之后，记下确认和草稿指纹</td><td>—</td></tr>
             <tr><td class="nowrap"><code>prepare</code></td><td>4–6</td><td>一键：同步云端 → <code>version</code> 写 appVersion 并单独提交 → <code>test</code> 全量测试（结束语、失败 0、Lua 报错 0）→ <code>check</code> 发布前检查</td><td>git、本机 Runtime、<code>publish-check.ps1</code>、<code>taptap-cli</code></td></tr>
             <tr><td class="nowrap">（改物料）</td><td>7</td><td>还是照 <code>publish/README.md</code> 手动做，<code>check</code> 里跑 <code>publish-check.ps1</code> 兜底</td><td><code>taptap-cli app</code></td></tr>
@@ -335,6 +336,7 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line);
             <tr><td class="nowrap">v0.4</td><td class="nowrap">2026-11-21</td><td>补被拒这条路。1.0.10 因简介一句“彩票站”被拒，重提时开着的旧发布页又把旧简介写回去，再拒一次。开发者说：“框架沉淀经验。以后简洁写精炼一点，太长反而不是好事”。改法：<code>check</code> 查简介敏感词（不过）、字数和游戏文字（提示）；<code>finish</code> 没新包只算等待，被拒记下原因；新增 <code>resubmit</code>（只改资料，用 <code>taptap-cli</code> 写简介、预检、加 <code>--yes</code> 提审）和 <code>renumber</code>（改代码重建，整次改号）；第 9 步写明先刷新发布页。</td><td class="nowrap">losomz（Claude 修订）</td></tr>
             <tr><td class="nowrap">v0.5</td><td class="nowrap">2026-11-22</td><td>修定号。开发者反馈：“这次 Maker 构建没让版本号 +1，收尾卡在第 10 步，要在框架里修”。对过 spark 4–13：Maker 号跟着包走，号出过包，下次构建或出包才 +1，没出过不涨。改法：<code>new</code> / <code>prepare</code> / <code>renumber</code> 按“哪个包是哪个号”推下一个包的号，推不通就停；第 10 步认新包，Maker 号对不上只提示，并记下 <code>makerVersion</code> 给下次定号；下一个包的号已经发过时，本次接着往后排，另记包号核对。</td><td class="nowrap">losomz（Claude 修订）</td></tr>
             <tr><td class="nowrap">v0.6</td><td class="nowrap">2026-11-23</td><td>加存档检查。1.0.14 只加了三个字段却把存档版本 9 升到 10，旧 SaveKit 版本不同就清档，老玩家一更新就从头开始，只好退回 1.0.13。开发者说：“不兼容你应该修复啊 默认的修复方式是有匹配补上的字段补字段 如果有特有的版本兼容再做特有的啊”；“上线了版本号开始加 按你前面说的 逐个版本修复，如果遇到以外情况 也走默认补全方案 不直接提交 避免遇到问题连补救措施都没有了”。改法：SaveKit 读档永不清档（见 savekit README“版本修补”）；<code>dev/release.json</code> 加 <code>save</code>；第 6 步查有没有上一版的真存档样本、存档版本号变了提示；第 13 步在测过的提交上出这一版的样本；新增 <code>sample</code>；README 写上紧急退版本的四条命令。</td><td class="nowrap">losomz（Claude 修订）</td></tr>
+            <tr><td class="nowrap">v0.7</td><td class="nowrap">2026-11-23</td><td>加 <code>reuse</code>：沿用已发的更新公告。1.0.14 清档退回后要发修复版 1.0.15，内容和 1.0.14 一样，开发者说：“公告可以沿用14的”。改法：<code>reuse --from 1.0.N</code> 把那条帖子记进本次，<code>draft</code> / <code>approve</code> 跳过，第 6 步认作已确认，第 11 步不发帖，第 12 步认得出已挂着的那条，版本表这一行写 <code>--note</code> 并标“沿用 1.0.N 的公告”。</td><td class="nowrap">losomz（Claude 修订）</td></tr>
           </tbody>
         </table>
       </div>
