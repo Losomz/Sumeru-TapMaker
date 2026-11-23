@@ -29,7 +29,7 @@
 2. **按环境分的地方都问它**，不再用 `Platform.IsDesktopPlatform()`：
 
    ```lua
-   Telemetry.Init(Env.IsDev())                                  -- 测试环境的事件标成调试数据
+   TelemetryKit.Init({...,isDebug=Env.IsDev()})                 -- 测试环境的事件标成调试数据
    local redeem=RedeemKit.new({...,userId=Env.IsDev() and function() return RedeemKit.UserId() or "desktop-test" end or nil})
    local ad=AdKit.new({sdk=sdk})                                -- 不传 simulate/blocked：广告跳过按 Has("skipAds")，电脑正式版自动拦下
    ```

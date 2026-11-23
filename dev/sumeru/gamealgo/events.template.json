@@ -1,0 +1,71 @@
+{
+  "_note": "固定事件词典。make-pack.js 按项目 dev/gamealgo/game.json 填 desc、mode 取值、额外字段和老字段，生成 events.yaml；这里的事件名和字段不要按游戏改",
+  "events": {
+    "level_start": {
+      "desc": "一关开始",
+      "fields": {
+        "level_attempt_id": { "type": "string", "required": true, "desc": "这一次尝试的唯一 ID；与对应 level_end 完全一致" },
+        "level_id": { "type": "string", "required": true, "desc": "关的稳定 ID" },
+        "mode": { "type": "string", "required": true, "desc": "玩法（中文）" },
+        "level_no": { "type": "number", "desc": "可比较的进度：第几关，越大越往后" },
+        "level_name": { "type": "string", "desc": "关的中文名，看板上显示这个" }
+      }
+    },
+    "level_end": {
+      "desc": "一关结束",
+      "fields": {
+        "level_attempt_id": { "type": "string", "required": true, "desc": "与对应 level_start 完全一致" },
+        "level_id": { "type": "string", "required": true, "desc": "与对应 level_start 一致" },
+        "mode": { "type": "string", "required": true, "desc": "与对应 level_start 一致" },
+        "level_no": { "type": "number", "desc": "与对应 level_start 一致" },
+        "level_name": { "type": "string", "desc": "与对应 level_start 一致" },
+        "result": { "type": "string", "required": true, "desc": "赢 win、输 lose、中途放弃 quit", "enumValues": ["win", "lose", "quit"] }
+      }
+    },
+    "milestone": {
+      "desc": "进度节点（SDK 按人去重）。new_user 为新手前期流程，global 为中长期进度",
+      "fields": {
+        "milestoneType": { "type": "string", "required": true, "desc": "流程类型：new_user、global" },
+        "milestonePoint": { "type": "string", "required": true, "desc": "节点名，见看板的新用户流程" },
+        "elapsedSinceRegistrationMs": { "type": "number", "desc": "SDK 自动补充：距该用户首次出现的毫秒数" }
+      }
+    },
+    "ad_view": {
+      "desc": "激励视频的一次曝光：宿主广告回调了就报一次（提前关闭、失败也报）。框架 AdKit 按广告位自动报",
+      "fields": {
+        "adPlacementId": { "type": "string", "required": true, "desc": "登记的广告位 ID（dev/gamealgo/ad-placements.yaml）" },
+        "revenue": { "type": "number", "required": true, "desc": "客户端拿不到结算金额，固定 0，由平台回补" },
+        "network": { "type": "string", "desc": "固定 taptap" },
+        "trackId": { "type": "string", "desc": "广告回调原样返回的 trackId" },
+        "adElapsedMs": { "type": "number", "desc": "SDK 代放时自动补充：从请求到回调的毫秒数" },
+        "adElapsedSource": { "type": "string", "desc": "SDK 代放时自动补充：adElapsedMs 的口径" }
+      }
+    },
+    "_boot_begin": {
+      "desc": "启动漏斗第一步：开始启动。配合 _boot_ready 看启动成功率"
+    },
+    "_boot_ready": {
+      "desc": "启动完成，第一页显示出来",
+      "fields": {
+        "sec": { "type": "number", "required": true, "desc": "从开始启动到完成的秒数（按帧累计）" },
+        "retries": { "type": "number", "desc": "首屏包自动重试的次数（不用 BootKit 的游戏为 0）" },
+        "manual": { "type": "number", "desc": "玩家点「重新下载」的次数（不用 BootKit 的游戏为 0）" }
+      }
+    },
+    "_boot_fail": {
+      "desc": "启动停在失败页（BootKit）。玩家点重试后可能再次上报",
+      "fields": {
+        "stage": { "type": "string", "required": true, "desc": "失败在哪一步：download 或步骤名" },
+        "failed": { "type": "number", "required": true, "desc": "没下载成功的素材数；步骤出错时为 0" },
+        "retries": { "type": "number", "required": true, "desc": "到失败为止的自动重试次数" },
+        "sec": { "type": "number", "required": true, "desc": "从开始启动到失败的秒数" }
+      }
+    },
+    "_boot_retry": {
+      "desc": "玩家在启动失败页点了「重新下载」（BootKit）",
+      "fields": {
+        "manual": { "type": "number", "required": true, "desc": "第几次手动重试" }
+      }
+    }
+  }
+}

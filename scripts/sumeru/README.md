@@ -36,6 +36,7 @@
 - [SaveKit：按结构声明合并的存档读写；CloudSync 云存档（clientCloud 多存一份，冲突让玩家选）](toolkit/savekit/README.md)
 - [LoadKit：资源分包按需下载与后台预取](toolkit/loadkit/README.md)
 - [AdKit：激励视频、免广与次数规则 AdFree、广告奖励统一入口 AdReward、电脑版提示移步手机端、广告位配置](toolkit/adkit/README.md)
+- [TelemetryKit：数据后台固定上报，事件、字段、看板框架定死，游戏只填 mode / 关名 / 里程碑节点，广告曝光由 AdKit 自动报](toolkit/telemetrykit/README.md)
 - [EnvKit：运行环境（全局 Model "Env"），启动参数 -sumeru_dev 认测试环境，测试面板、广告跳过等测试功能按它开关](toolkit/envkit/README.md)
 - [RedeemKit：兑换码，游戏内置码（存档记领取）+ TapTap 礼包无服务器兑换（Maker 真机需白名单）](toolkit/redeemkit/README.md)
 - [RankKit：排行榜，clientCloud 整数云变量 + TapTap 昵称，只记历史最高，截图可模拟](toolkit/rankkit/README.md)

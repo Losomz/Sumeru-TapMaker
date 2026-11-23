@@ -1,7 +1,8 @@
 -- 广告奖励统一入口：业务按钮只管调用 Reward(key,grant) 发奖，不判断免广、也不自己计次。
 -- 入口先查当天总上限和这个广告点的上限；免广时不播广告直接发奖，否则播激励视频，完整看完才发奖并推进免广进度。
 -- 看不了广告的设备（电脑版）提示去手机上看；已经免广的照样直接领（免广状态跟存档走，手机上攒的电脑上也能用）。
--- 规则在 AdFree，播放在 AdKit；游戏只注入存档里的状态、提示、存档，以及播放前后的钩子（暂停、埋点广告位等）。
+-- 规则在 AdFree，播放在 AdKit；游戏只注入存档里的状态、提示、存档，以及播放前后的钩子（暂停等）。
+-- 广告点 key 一路传给 AdKit，数据后台的 ad_view 由那里按 key 报（TelemetryKit 登记的广告位），游戏不用自己埋点。
 ---@class SumeruAdReward
 local AdReward={};AdReward.__index=AdReward
 
@@ -66,10 +67,10 @@ local function play(self,placement,onDone)
    persist(self)
   elseif result.msg=="embed manual close" then say(self,self.texts.incomplete)
   else say(self,self.texts.failed) end
- end)
+ end,placement)
 end
 
--- 广告奖励唯一入口。key 是广告点：按它限次，也作为数据后台的广告位名（交给 onStart）。
+-- 广告奖励唯一入口。key 是广告点：按它限次，也是数据后台的广告位 key（交给 AdKit 报 ad_view，也交给 onStart）。
 -- grant() 发奖并返回提示；返回 nil 表示奖励已失效，不发也不计这个点的次数（看完的那次广告照样计入当天总次数）。
 -- 返回 true 表示已经免广直领，或广告已经开始播放。
 ---@param key string

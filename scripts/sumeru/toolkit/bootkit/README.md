@@ -48,7 +48,7 @@ function Start()
    {label="预热",weight=2,update=function(step,dt) step:Progress(k);if k>=1 then step:Done() end end},
   },
   onDone=function() app:Enter() end,
-  onEvent=function(name,data) Telemetry.Boot(name,data) end,
+  onEvent=TelemetryKit.Boot,                    -- 数据后台启动漏斗，见 TelemetryKit
  })
  boot:Start()
  SubscribeToEvent("Update","HandleUpdate")

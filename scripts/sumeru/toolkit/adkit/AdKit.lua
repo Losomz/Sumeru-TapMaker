@@ -1,5 +1,6 @@
--- 激励视频适配层：统一 Maker sdk 的异步回调、忙状态与失败兜底。
+-- 激励视频适配层：统一 Maker sdk 的异步回调、忙状态与失败兜底；传了广告位就顺带报数据后台的 ad_view。
 local Env=require("sumeru.toolkit.envkit")
+local Telemetry=require("sumeru.toolkit.telemetrykit")
 ---@class SumeruAdKit
 ---@field sdk table?
 ---@field busy boolean
@@ -33,7 +34,11 @@ function Kit:CanRequest() return not self.busy and not self:IsBlocked() and (sel
 
 -- 完整观看才把 success 交给业务；返回 false 且没有回调时也必须收尾一次。模拟模式立即按成功回调。
 -- 失败时把宿主原始 msg 写进日志，正式包排查（如缺 @runtime.ad 广告位）只能靠这一行。
-function Kit:ShowRewardVideo(done)
+-- placement：广告位 key（TelemetryKit.Init 的 ads 里登记的）。传了就报 ad_view：TelemetryKit 就绪且登记过时交给 GameAlgo SDK 代放，
+-- 它自己报；否则照旧调宿主，宿主回调了再补报。看不了广告、模拟、宿主没有接口这几种没真放，不报。
+---@param done fun(result:table)?
+---@param placement string?
+function Kit:ShowRewardVideo(done,placement)
  if self.busy then return false,"广告正在播放" end
  self.busy=true
  local finished=false
@@ -50,7 +55,15 @@ function Kit:ShowRewardVideo(done)
   finish({success=true,msg="local simulate"});return true
  end
  if not self.sdk or type(self.sdk.ShowRewardVideoAd)~="function" then finish({success=false,msg="当前平台不支持广告"});return false end
- local ok,accepted=pcall(function() return self.sdk:ShowRewardVideoAd(finish) end)
+ local proxied=Telemetry.ShowRewardVideoAd(placement,finish)
+ if proxied==true then return true end
+ if proxied==false then finish({success=false,msg="宿主未受理广告请求（检查 @runtime.ad 广告位配置）"});return false end
+ local closed=false
+ local function onClose(result)
+  if not closed then closed=true;Telemetry.AdClosed(placement,result) end
+  finish(result)
+ end
+ local ok,accepted=pcall(function() return self.sdk:ShowRewardVideoAd(onClose) end)
  if not ok then finish({success=false,msg="ShowRewardVideoAd 出错: "..tostring(accepted)});return false end
  if accepted==false then finish({success=false,msg="宿主未受理广告请求（检查 @runtime.ad 广告位配置）"});return false end
  return true

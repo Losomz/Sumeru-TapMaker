@@ -16,6 +16,7 @@ end
 - 只有 `result.success==true` 才发奖；`"embed manual close"`（提前关闭）也是失败。
 - 每次请求只回调一次；播放期间 `IsBusy()` 为真，重复点击直接返回 `false`。
 - 失败时日志会打印 `[AdKit] 广告未完成 msg=...`，这是宿主/SDK 的原始结果，排查先看这一行。
+- `ShowRewardVideo(done,key)` 第二个参数是广告位 key：传了就报数据后台的 `ad_view`，见下面「数据后台」。
 - `simulate`：不调用宿主，直接按完整观看回调，只用来走通奖励链路。不传时按 `EnvKit.Has("skipAds")`（测试环境才开），每次请求时才问，线上中途 `Env.Enable` 也立即生效。
 - `blocked`：这台设备看不了广告，请求直接失败（`msg="device blocked"`）。不传时按 `EnvKit.IsPCRelease()`。见下面「电脑版」。
 - 不要再传 `simulate=Platform.IsDesktopPlatform()`：TapTap PC 版也是桌面平台，PC 玩家会白拿奖励。老代码这么传的，`blocked` 也会先拦下。
@@ -56,7 +57,7 @@ local ads=AdReward.new({
  state=function() return data.ads.free end,
  notice=function(text) ShowToast(text) end,
  save=function() SaveGame() end,
- onStart=function(placement) PauseGame();SetAdPlacement(placement) end, -- 开始播放
+ onStart=function(placement) PauseGame() end,                           -- 开始播放
  onEnd=function() ResumeGame() end,                                      -- 播放结束（不论成败）
 })
 
@@ -75,6 +76,17 @@ local left=ads:Left("gift")  -- 这个广告点今天还能领几次，已算上
 - 连续天数按本地日历算，漏掉一天就归零；长期免广期间不会断，到期后重新累计。
 - 旧版存档里的 `permanent`（永久免广）读档时改成从当天起的长期免广，`freeUses` 并进当天总次数。
 - 提示文案在 `AdReward.TEXTS`，`new` 时传 `texts` 覆盖其中几条即可。
+
+## 数据后台
+
+广告曝光 `ad_view` 固定在广告入口报，游戏只在调广告时传广告位 key，不用自己埋点：
+
+- `AdReward:Reward(key,grant)` / `Watch(key)` 自动把 key 传给 AdKit。
+- 自己调的：`ad:ShowRewardVideo(done,key)`。
+- key 要在 `TelemetryKit.Init` 的 `ads` 里登记 gap_ ID（`dev/gamealgo/ad-placements.yaml` 登记后拿到）。
+- TelemetryKit 就绪且 key 登记过：交给 GameAlgo SDK 代放，它调宿主、收场时报。否则照旧调宿主，宿主回调了再补报一次（提前关闭、失败也报）。
+- 看不了广告（电脑版）、测试环境模拟、宿主没有广告接口、没传 key、key 没登记：不报。
+- `AdKit.new({sdk=...})` 传宿主 `sdk` 本身，别再包一层埋点的壳（老写法 `Telemetry.WrapAds`）：SDK 代放时调的是全局 `sdk`。
 
 ## 电脑版
 

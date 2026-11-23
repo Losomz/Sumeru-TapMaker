@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 2,
+  "title": "由 game.json 的 title 填",
+  "events": {
+    "level_start": {
+      "fields": {
+        "mode": { "path": "$.mode", "type": "string" },
+        "level_id": { "path": "$.level_id", "type": "string" },
+        "level_name": { "path": "$.level_name", "type": "string" },
+        "level_no": { "path": "$.level_no", "type": "number" }
+      }
+    },
+    "level_end": {
+      "fields": {
+        "mode": { "path": "$.mode", "type": "string" },
+        "level_id": { "path": "$.level_id", "type": "string" },
+        "level_name": { "path": "$.level_name", "type": "string" },
+        "level_no": { "path": "$.level_no", "type": "number" },
+        "result": { "path": "$.result", "type": "string" }
+      }
+    }
+  },
+  "milestones": [],
+  "datasets": {
+    "play_daily": {
+      "type": "event",
+      "fromEvents": ["level_start", "level_end"],
+      "groupBy": ["dt", "mode"],
+      "metrics": {
+        "starts": { "agg": "count", "event": "level_start" },
+        "ends": { "agg": "count", "event": "level_end" },
+        "wins": { "agg": "count", "event": "level_end", "filter": { "field": "result", "op": "eq", "value": "win" } },
+        "loses": { "agg": "count", "event": "level_end", "filter": { "field": "result", "op": "eq", "value": "lose" } },
+        "quits": { "agg": "count", "event": "level_end", "filter": { "field": "result", "op": "eq", "value": "quit" } },
+        "players": { "agg": "count_distinct", "field": "userId", "event": "level_start" }
+      }
+    },
+    "level_daily": {
+      "type": "event",
+      "fromEvents": ["level_start", "level_end"],
+      "groupBy": ["dt", "mode", "level_no", "level_name"],
+      "metrics": {
+        "starts": { "agg": "count", "event": "level_start" },
+        "wins": { "agg": "count", "event": "level_end", "filter": { "field": "result", "op": "eq", "value": "win" } },
+        "loses": { "agg": "count", "event": "level_end", "filter": { "field": "result", "op": "eq", "value": "lose" } },
+        "quits": { "agg": "count", "event": "level_end", "filter": { "field": "result", "op": "eq", "value": "quit" } },
+        "players": { "agg": "count_distinct", "field": "userId", "event": "level_start" }
+      }
+    }
+  },
+  "groups": [
+    { "id": "core", "title": "核心概览", "standard": "core.overview@1" },
+    { "id": "versions", "title": "版本覆盖", "standard": "device.version_coverage@1" },
+    { "id": "retention", "title": "新用户留存", "standard": "retention.cohort@1" },
+    { "id": "revenue", "title": "广告收入", "standard": "revenue.placement@1" },
+    { "id": "ltv", "title": "新用户价值", "standard": "revenue.ltv@1" },
+    { "id": "milestone_funnel", "title": "新用户流程漏斗与流失定位", "standard": "milestone.funnel@1" },
+    {
+      "id": "play",
+      "title": "由 game.json 的 play.title 填",
+      "views": [
+        {
+          "id": "attempts_trend",
+          "title": "每日玩法次数",
+          "type": "line",
+          "x": "dt",
+          "y": "starts",
+          "series": "mode",
+          "data": {
+            "dataset": "play_daily",
+            "groupBy": ["dt", "mode"],
+            "metrics": { "starts": { "agg": "sum", "field": "starts", "title": "开始" } }
+          }
+        },
+        {
+          "id": "result_summary",
+          "title": "区间成败（按玩法）",
+          "type": "table",
+          "data": {
+            "dataset": "play_daily",
+            "groupBy": ["mode"],
+            "metrics": {
+              "starts": { "agg": "sum", "field": "starts", "title": "开始" },
+              "ends": { "agg": "sum", "field": "ends", "title": "结束" },
+              "wins": { "agg": "sum", "field": "wins", "title": "赢" },
+              "loses": { "agg": "sum", "field": "loses", "title": "输" },
+              "quits": { "agg": "sum", "field": "quits", "title": "放弃" },
+              "player_days": { "agg": "sum", "field": "players", "title": "人天" },
+              "win_rate": { "formula": "wins / ends", "title": "胜率" },
+              "quit_rate": { "formula": "quits / ends", "title": "放弃率" }
+            }
+          },
+          "orderBy": [{ "field": "starts", "direction": "desc" }]
+        },
+        {
+          "id": "level_table",
+          "title": "各关成败",
+          "type": "table",
+          "data": {
+            "dataset": "level_daily",
+            "groupBy": ["mode", "level_no", "level_name"],
+            "metrics": {
+              "starts": { "agg": "sum", "field": "starts", "title": "开始" },
+              "wins": { "agg": "sum", "field": "wins", "title": "赢" },
+              "loses": { "agg": "sum", "field": "loses", "title": "输" },
+              "quits": { "agg": "sum", "field": "quits", "title": "放弃" },
+              "player_days": { "agg": "sum", "field": "players", "title": "人天" },
+              "win_rate": { "formula": "wins / (wins + loses + quits)", "title": "胜率" },
+              "quit_rate": { "formula": "quits / (wins + loses + quits)", "title": "放弃率" }
+            }
+          },
+          "orderBy": [{ "field": "mode", "direction": "asc" }, { "field": "level_no", "direction": "asc" }]
+        }
+      ]
+    }
+  ],
+  "tabs": [
+    { "id": "overview", "title": "概览", "groups": ["core", "versions"] },
+    { "id": "retention", "title": "留存", "groups": ["retention"] },
+    { "id": "revenue", "title": "广告收入", "groups": ["revenue", "ltv"] },
+    { "id": "new_user", "title": "新用户流程", "groups": ["milestone_funnel"] },
+    { "id": "play", "title": "玩法", "groups": ["play"] }
+  ]
+}
